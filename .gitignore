@@ -15,3 +15,11 @@ verilog/*.vcd
 
 # Calibre PEX run dir
 pex/run/
+
+# LaTeX build files
+report/*.aux
+report/*.fls
+report/*.fdb_latexmk
+report/*.out
+report/*.synctex.gz
+.DS_Store

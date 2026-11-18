@@ -1,0 +1,272 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{hyperref}
+\sisetup{detect-all}
+\graphicspath{{../exp/}}
+
+% Post-layout (Calibre xRC) values: fill in from sim/shifter_metrics_pex.csv
+\newcommand{\pex}{\textemdash}
+
+\title{8-bit Logarithmic Shifter in TSMC 65\,nm:\\Design, Verification and Characterization}
+\author{}
+\date{November 18, 2026}
+
+\begin{document}
+\maketitle
+
+%--------------------------------------------------------------------------
+\section{Objective}
+Design an 8-bit shifter (\texttt{Shifter\_8bit\_sized}) in the TSMC 65\,nm GP
+process, verify that layout matches schematic, and characterize its
+transition time (slew), propagation delay and power in transient simulation.
+
+%--------------------------------------------------------------------------
+\section{Design}
+The shifter is a three-stage logarithmic shifter. Stage $k$ ($k=0,1,2$) is a
+row of eight 2:1 multiplexers controlled by select bit $S_k$, which either
+passes each bit through or takes the bit $2^k$ positions away, so the three
+stages together realize any shift amount $0$--$7$. Complementary selects
+$S_k$/$\overline{S_k}$ are provided at the cell boundary.
+
+Each multiplexer is built from two CMOS transmission gates
+(Fig.~\ref{fig:mux}); since transmission gates do not restore signal levels,
+every multiplexer stage is followed by an inverter. Together with the input
+inverter, every path passes through four inverters, so the output is not
+inverted. The inverters are sized up from input to output
+(\texttt{INV\_1}$\rightarrow$\texttt{INV\_4}) to drive the output load.
+
+\begin{table}[H]
+\centering
+\caption{Cell hierarchy of \texttt{Shifter\_8bit\_sized} (signal path order).}
+\label{tab:hier}
+\begin{tabular}{llcl}
+\toprule
+Position & Cell & Instances & Function \\
+\midrule
+Input       & \texttt{INV\_1}      & 8 & input inverter \\
+Stage 0     & \texttt{MUX2to1\_1}  & 8 & TG mux, shift by 1 ($S_0$) \\
+            & \texttt{INV\_2}      & 8 & level restore \\
+Stage 1     & \texttt{MUX2to1\_2}  & 8 & TG mux, shift by 2 ($S_1$) \\
+            & \texttt{INV\_3}      & 8 & level restore \\
+Stage 2     & \texttt{MUX2to1\_3}  & 8 & TG mux, shift by 4 ($S_2$) \\
+Output      & \texttt{INV\_4}      & 8 & output driver \\
+\midrule
+\multicolumn{2}{l}{Ports} & \multicolumn{2}{l}{$A_{7:0}$, $S_{2:0}$, $\overline{S}_{2:0}$, $Y_{7:0}$, VDD, VSS} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.48\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{inv_std_size.png}
+  \caption{Reference inverter \texttt{INV\_150n}: PMOS $W/L = 300\,\text{n}/60\,\text{n}$,
+           NMOS $W/L = 150\,\text{n}/60\,\text{n}$.}
+  \label{fig:inv}
+\end{subfigure}\hfill
+\begin{subfigure}[b]{0.48\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{shifter_mux.png}
+  \caption{2:1 multiplexer from two transmission gates
+           (\texttt{VIN0}, \texttt{VIN1}, \texttt{SEL}, \texttt{SEL\_N}).}
+  \label{fig:mux}
+\end{subfigure}
+\caption{Leaf cells.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\linewidth]{shcematic.png}
+\caption{Shifter schematic: input inverter row followed by three
+multiplexer\,+\,inverter rows (one per shift stage).}
+\label{fig:sch}
+\end{figure}
+
+%--------------------------------------------------------------------------
+\section{Verification}
+
+\subsection{Layout versus schematic}
+The layout (Fig.~\ref{fig:layout}) was checked with Calibre nmLVS
+v2025.1\_16.10 against the schematic netlist. The comparison result is
+\textbf{CORRECT} (Fig.~\ref{fig:lvs}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[height=0.72\textheight]{shifter_layout_crop.png}
+\caption{Layout of \texttt{Shifter\_8bit\_sized}: eight bit rows between
+alternating VDD/VSS rails, multiplexer/inverter stages in columns.}
+\label{fig:layout}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{lvs_report.png}
+\caption{Calibre LVS report: overall comparison result CORRECT for
+\texttt{Shifter\_8bit\_sized}.}
+\label{fig:lvs}
+\end{figure}
+
+\subsection{Logic reference model}
+A self-checking Verilog testbench (\texttt{verilog/tb\_Shifter\_8bit\_sized.v})
+applies all $2^8 \times 2^3 = 2048$ input/shift combinations and compares the
+outputs with a golden shift function. Run against the behavioral model it
+passes 2048/2048 vectors; the same testbench can be bound to the netlisted
+schematic in a mixed-signal simulator to check the transistor-level circuit.
+
+\begin{table}[H]
+\centering
+\caption{Verification summary.}
+\label{tab:verif}
+\begin{tabular}{lll}
+\toprule
+Check & Tool & Result \\
+\midrule
+LVS (layout vs.\ schematic)      & Calibre nmLVS v2025.1   & CORRECT \\
+Logic reference (2048 vectors)   & Icarus Verilog 13.0     & 2048/2048 pass (behavioral model) \\
+Transient simulation             & Spectre 23.1 (APS)      & completed, 0 errors \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%--------------------------------------------------------------------------
+\section{Characterization}
+
+\subsection{Setup}
+The testbench \texttt{Shifter\_8bit\_sized\_tb} drives the inputs and
+selects from voltage sources and loads each output with an
+\texttt{INV\_150n} instantiated with multiplier $m=4$ (a fanout-of-4 style
+load). Metrics are extracted by the OCEAN script
+\texttt{ocean/shifter\_metrics.ocn}.
+
+\begin{table}[H]
+\centering
+\caption{Simulation conditions.}
+\label{tab:setup}
+\begin{tabular}{ll}
+\toprule
+Parameter & Value \\
+\midrule
+Process / models      & TSMC 65\,nm GP, \texttt{crn65gplus\_2d5\_lk\_v1d0}, TT \\
+Supply $V_{DD}$       & \SI{1.0}{V} \\
+Temperature           & \SI{27}{\celsius} \\
+Simulator             & Spectre 23.1 (APS), \texttt{errpreset=conservative} \\
+Analysis              & transient, \SIrange{0}{10}{\micro s} (3234 time steps) \\
+Circuit size          & 224 MOSFETs, 103 nodes, 15 sources \\
+Output load           & \texttt{INV\_150n}, $m=4$ per output \\
+Slew definition       & 10\%--90\% of $V_{DD}$ \\
+Delay definition      & 50\% input edge $\rightarrow$ 50\% output edge \\
+Power                 & $V_{DD} \times$ current into the shifter's VDD pin \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Propagation delay is measured for every output transition from the most
+recent input or select transition that precedes it, so it covers both data
+($A \rightarrow Y$) and select ($S \rightarrow Y$) paths exercised by the
+stimulus.
+
+\subsection{Timing}
+
+\begin{table}[H]
+\centering
+\caption{Per-output timing, schematic (pre-layout). All times in ps.}
+\label{tab:timing}
+\begin{tabular}{l S[table-format=2.2] S[table-format=2.2] c c S[table-format=2.2] S[table-format=2.2] S[table-format=2.0]}
+\toprule
+ & \multicolumn{2}{c}{Rise slew} & \multicolumn{2}{c}{Fall slew\textsuperscript{a}}
+ & \multicolumn{2}{c}{Delay $t_{pd}$} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Output & {max} & {avg} & max & avg & {max} & {avg} & {Edges} \\
+\midrule
+$Y_0$ & 20.64 & 20.52 & \textemdash & \textemdash & 65.34 & 60.06 & 10 \\
+$Y_1$ & 20.65 & 20.53 & \textemdash & \textemdash & 62.43 & 51.08 & 10 \\
+$Y_2$ & 20.63 & 20.52 & \textemdash & \textemdash & 65.34 & 56.34 & 10 \\
+$Y_3$ & 20.64 & 20.56 & \textemdash & \textemdash & 62.43 & 47.01 & 10 \\
+$Y_4$ & 20.60 & 20.59 & \textemdash & \textemdash & 65.36 & 56.26 &  4 \\
+$Y_5$ & 20.64 & 20.61 & \textemdash & \textemdash & 62.43 & 51.75 &  4 \\
+$Y_6$ & 20.60 & 20.58 & \textemdash & \textemdash & 65.36 & 57.07 &  4 \\
+$Y_7$ & 20.61 & 20.61 & \textemdash & \textemdash & 62.43 & 37.37 &  5 \\
+\midrule
+All   & 20.65 & 20.55 & \textemdash & \textemdash & 65.36 & 52.49 & 57 \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+\footnotesize\textsuperscript{a}Pending: the first metrics run measured the
+fall slew with reversed thresholds; rerun
+\texttt{ocean/shifter\_metrics\_schematic.ocn} to fill these columns.
+\end{table}
+
+The worst-case propagation delay is \SI{65.4}{ps} and the output rise slew is
+uniform at about \SI{20.6}{ps} across all bits, consistent with every output
+being driven by an identical \texttt{INV\_4} into an identical load.
+$Y_4$--$Y_7$ toggle only 4--5 times under the present stimulus, so their
+statistics rest on fewer edges than $Y_0$--$Y_3$.
+
+\subsection{Power and energy}
+
+\begin{table}[H]
+\centering
+\caption{Power and energy drawn from VDD, schematic (pre-layout).}
+\label{tab:power}
+\begin{tabular}{l S[table-format=3.4] l}
+\toprule
+Metric & {Value} & Unit \\
+\midrule
+Average power (\SI{10}{\micro s} window) & 0.2567 & \si{\micro W} \\
+Peak power                               & 620.1380 & \si{\micro W} \\
+Total energy                             & 2.5665 & \si{pJ} \\
+Energy per output transition (57 edges)  & 45.03 & \si{fJ} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The average power is low because the circuit switches only during the short
+input transitions of the \SI{10}{\micro s} window; the energy per output
+transition (\SI{45}{fJ}) is the more meaningful figure and includes the
+internal multiplexer and inverter nodes that switch with each output edge.
+
+%--------------------------------------------------------------------------
+\section{Pre- versus post-layout}
+Parasitics are extracted with Calibre xRC (R\,+\,C\,+\,coupling C) by
+\texttt{pex/run\_pex.sh}; the extracted cell replaces the schematic in the
+same testbench and the same OCEAN script is rerun with
+\texttt{shmPexNetlist} set.
+
+\begin{table}[H]
+\centering
+\caption{Schematic versus extracted layout (worst case over all outputs).}
+\label{tab:prepost}
+\begin{tabular}{l S[table-format=3.2] c c}
+\toprule
+Metric & {Schematic} & Post-layout & Change \\
+\midrule
+Rise slew, max (ps)          & 20.65  & \pex & \pex \\
+Fall slew, max (ps)          & {\textemdash} & \pex & \pex \\
+Delay $t_{pd}$, max (ps)     & 65.36  & \pex & \pex \\
+Delay $t_{pd}$, avg (ps)     & 52.49  & \pex & \pex \\
+Average power (\si{\micro W}) & 0.2567 & \pex & \pex \\
+Peak power (\si{\micro W})    & 620.14 & \pex & \pex \\
+Energy per transition (fJ)   & 45.03  & \pex & \pex \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%--------------------------------------------------------------------------
+\section{Conclusion}
+The 8-bit logarithmic shifter was implemented with transmission-gate
+multiplexers and progressively sized restoring inverters. Its layout is
+LVS-clean, and pre-layout simulation at \SI{1.0}{V}, TT, \SI{27}{\celsius}
+gives a worst-case delay of \SI{65.4}{ps}, an output rise slew of
+\SI{20.7}{ps} and about \SI{45}{fJ} per output transition into a
+fanout-of-4 style load. Post-layout figures will quantify the cost of the
+extracted wiring parasitics.
+
+\end{document}
