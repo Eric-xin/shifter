@@ -142,8 +142,7 @@ Transient simulation             & Spectre 23.1 (APS)      & completed, 0 errors
 The testbench \texttt{Shifter\_8bit\_sized\_tb} drives the inputs and
 selects from voltage sources and loads each output with an
 \texttt{INV\_150n} instantiated with multiplier $m=4$ (a fanout-of-4 style
-load). Metrics are extracted by the OCEAN script
-\texttt{ocean/shifter\_metrics.ocn}.
+load). Metrics are extracted from the transient waveforms.
 
 \begin{table}[H]
 \centering
@@ -199,9 +198,8 @@ All   & 20.65 & 20.55 & \textemdash & \textemdash & 65.36 & 52.49 & 57 \\
 \end{tabular}
 
 \smallskip
-\footnotesize\textsuperscript{a}Pending: the first metrics run measured the
-fall slew with reversed thresholds; rerun
-\texttt{ocean/shifter\_metrics\_schematic.ocn} to fill these columns.
+\footnotesize\textsuperscript{a}Pending: to be filled from a repeated
+measurement (the first run used reversed fall-slew thresholds).
 \end{table}
 
 The worst-case propagation delay is \SI{65.4}{ps} and the output rise slew is
@@ -235,10 +233,9 @@ internal multiplexer and inverter nodes that switch with each output edge.
 
 %--------------------------------------------------------------------------
 \section{Pre- versus post-layout}
-Parasitics are extracted with Calibre xRC (R\,+\,C\,+\,coupling C) by
-\texttt{pex/run\_pex.sh}; the extracted cell replaces the schematic in the
-same testbench and the same OCEAN script is rerun with
-\texttt{shmPexNetlist} set.
+Parasitics are extracted with Calibre xRC (R\,+\,C\,+\,coupling C); the
+extracted cell replaces the schematic in the same testbench and the same
+measurements are repeated.
 
 \begin{table}[H]
 \centering
