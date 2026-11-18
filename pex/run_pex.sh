@@ -59,13 +59,25 @@ echo "LVS deck: $LVS_DECK"
 echo "PEX deck: $PEX_DECK"
 
 mkdir -p "$RUN"; cd "$RUN"
-echo "SOFTINCLUDE $CDS_DIR/cds.lib" > cds.lib
+
+# Cadence tools run from $CDS_DIR (where you start Virtuoso) so cds.lib relative
+# paths, the attached tech library and any .cdsinit/.cdsenv resolve as usual.
+lib_diag() {  # $1 = tool log
+  echo "--- last lines of $1"; tail -n 15 "$1" 2>/dev/null || true
+  echo "--- library definitions in $CDS_DIR/cds.lib"
+  grep -nE '^[[:space:]]*(SOFT)?(DEFINE|INCLUDE)' "$CDS_DIR/cds.lib" | head -30 || true
+  echo "Check that $LIB and its tech library (e.g. tsmcN65) are DEFINEd above,"
+  echo "or set CDS_DIR to the directory you launch Virtuoso from."
+}
 
 # --- 1. layout -> GDS ---------------------------------------------------------
 say "Stream out $LIB/$CELL/layout"
-strmout -library "$LIB" -topCell "$CELL" -view layout -strmFile "$CELL.gds" \
-        -logFile strmout.log ${LAYERMAP:+-layerMap "$LAYERMAP"} \
-  || die "strmout failed, see $RUN/strmout.log"
+if ! (cd "$CDS_DIR" && strmout -library "$LIB" -topCell "$CELL" -view layout \
+        -strmFile "$RUN/$CELL.gds" -logFile "$RUN/strmout.log" \
+        ${LAYERMAP:+-layerMap "$LAYERMAP"}) > strmout.out 2>&1 \
+   || [ ! -s "$CELL.gds" ]; then
+  cat strmout.out; lib_diag "$RUN/strmout.log"; die "strmout failed"
+fi
 
 # --- 2. schematic -> CDL (LVS source) ----------------------------------------
 say "Netlist $LIB/$CELL/schematic to CDL"
@@ -106,8 +118,10 @@ setEQUIV = ""
 incFILE = ""
 auCdlDefNetlistProc = "ansCdlSubcktCall"
 EOF
-si -batch -command netlist -cdslib cds.lib > si.out 2>&1 || die "si failed, see $RUN/si.out"
-[ -s "$CELL.cdl" ] || die "CDL netlist not produced, see $RUN/si.out"
+if ! (cd "$CDS_DIR" && si "$RUN" -batch -command netlist -cdslib "$CDS_DIR/cds.lib") \
+        > si.out 2>&1 || [ ! -s "$CELL.cdl" ]; then
+  lib_diag "$RUN/si.out"; die "si (CDL netlist) failed"
+fi
 
 # --- 3. Calibre rules ---------------------------------------------------------
 # PDK decks sometimes carry their own LAYOUT/SOURCE/report statements; comment
