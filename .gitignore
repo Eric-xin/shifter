@@ -12,3 +12,6 @@ panic*
 # Verilog sim outputs
 verilog/*.vvp
 verilog/*.vcd
+
+# Calibre PEX run dir
+pex/run/

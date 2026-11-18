@@ -9,6 +9,9 @@
 ;;   shell:    ocean -nograph -restore Shifter/ocean/shifter_metrics.ocn
 ;;
 ;; Results print to the log and are written to shmCsv.
+;;
+;; Post-layout: run pex/run_pex.sh, then set shmPexNetlist to the tb_pex.scs it
+;; prints. The same TB is simulated with the Calibre-extracted shifter (R+C+CC).
 
 ;; ---------------------------------------------------------------- config
 shmLib    = "Shifter"
@@ -16,12 +19,13 @@ shmCell   = "Shifter_8bit_sized_tb"
 shmDut    = "/I0"                 ; DUT instance in the TB schematic
 shmVddNets = list("VDD" "vdd!" "VDD!" "vdd")  ; supply net candidates, first found wins
 shmVddVal = nil                   ; set a number (e.g. 1.0) to skip reading VDD from the sim
+shmPexNetlist = nil               ; path to pex/run/tb_pex.scs for post-layout, nil = schematic
 shmRunSim = t                     ; nil = only analyze shmResDir from a prior run
-shmResDir = "./shifter_metrics_sim"
+shmResDir = if(shmPexNetlist "./shifter_metrics_pex_sim" "./shifter_metrics_sim")
 shmStop   = 10u
 shmLo     = 10                    ; slew thresholds, % of VDD
 shmHi     = 90
-shmCsv    = "./shifter_metrics.csv"
+shmCsv    = if(shmPexNetlist "./shifter_metrics_pex.csv" "./shifter_metrics.csv")
 shmModel  = "/courses/ee4321/tech/tsmc65/T-N65-CM-SP-018-K3_MOM/Base_PDK/PDK_CRN65GP_v1.0c_official_IC61_20101010/tsmcN65/../models/spectre/crn65gplus_2d5_lk_v1d0.scs"
 shmOuts   = list("Y0" "Y1" "Y2" "Y3" "Y4" "Y5" "Y6" "Y7")
 shmIns    = list("A0" "A1" "A2" "A3" "A4" "A5" "A6" "A7" "S0" "S1" "S2")
@@ -49,14 +53,25 @@ procedure(shmMax(l)
 procedure(shmAvg(l) when(l (apply('plus l) / length(l))))
 procedure(shmFmt(x scale) if(x sprintf(nil "%.2f" x*scale) "-"))
 
+;; Expression for a net's voltage: schematic names in schematic mode, raw
+;; Spectre names when simulating a netlist file (post-layout).
+procedure(shmV(n)
+  if(shmPexNetlist sprintf(nil "getData(\"%s\")" n) sprintf(nil "VT(\"/%s\")" n)))
+
 ;; All crossing times of net at level v (any direction).
 procedure(shmCross(net v)
-  shmVals(shmTry(sprintf(nil "cross(VT(\"/%s\") %g 1 'either t \"cycle\")" net v))))
+  shmVals(shmTry(sprintf(nil "cross(%s %g 1 'either t \"cycle\")" shmV(net) v))))
+
+shmDutName = car(last(parseString(shmDut "/")))
 
 ;; ---------------------------------------------------------------- simulate
 if(shmRunSim then
   simulator('spectre)
-  design(shmLib shmCell "schematic")
+  if(shmPexNetlist then
+    unless(isFile(shmPexNetlist) error("shmPexNetlist not found: %s\n" shmPexNetlist))
+    design(shmPexNetlist)
+  else
+    design(shmLib shmCell "schematic"))
   resultsDir(shmResDir)
   modelFile(list(shmModel "tt") list(shmModel "tt_bip") list(shmModel "tt_dio")
             list(shmModel "tt_dio_33"))
@@ -64,8 +79,11 @@ if(shmRunSim then
   temp(27)
   ;; Naming signals in save() switches Spectre to "selected only", so every
   ;; voltage the script reads must be listed here too.
-  foreach(n append(shmVddNets append(shmIns shmOuts)) save('v strcat("/" n)))
-  save('i strcat(shmDut "/VDD"))
+  foreach(n append(shmVddNets append(shmIns shmOuts))
+    save('v if(shmPexNetlist n strcat("/" n))))
+  if(shmPexNetlist
+    errset(save('i strcat(shmDutName ":VDD")))
+    errset(save('i strcat(shmDut "/VDD"))))
   ;; Fallbacks for power: all terminal currents + Spectre's own power signals.
   errset(saveOption('currents "all"))
   errset(saveOption('pwr "all"))
@@ -81,13 +99,13 @@ shmVdd = shmVddVal
 unless(shmVdd
   foreach(n shmVddNets
     unless(shmVdd
-      let((v) v = shmTry(sprintf(nil "ymax(VT(\"/%s\"))" n))
+      let((v) v = shmTry(sprintf(nil "ymax(%s)" shmV(n)))
         when(numberp(v) && v > 0.1
           shmVdd = v
           printf("VDD taken from net /%s\n" n))))))
 unless(shmVdd
   let((vs)
-    vs = setof(v mapcar(lambda((n) shmTry(sprintf(nil "ymax(VT(\"/%s\"))" n))) shmIns)
+    vs = setof(v mapcar(lambda((n) shmTry(sprintf(nil "ymax(%s)" shmV(n)))) shmIns)
                numberp(v))
     when(vs
       shmVdd = shmMax(vs)
@@ -114,9 +132,9 @@ shmAllRise = nil  shmAllFall = nil  shmAllTpd = nil  shmEdges = 0
 foreach(y shmOuts
   let((rise fall tpd)
     rise = shmVals(shmTry(sprintf(nil
-             "riseTime(VT(\"/%s\") 0 nil %g nil %d %d t \"cycle\")" y shmVdd shmLo shmHi)))
+             "riseTime(%s 0 nil %g nil %d %d t \"cycle\")" shmV(y) shmVdd shmLo shmHi)))
     fall = shmVals(shmTry(sprintf(nil
-             "fallTime(VT(\"/%s\") %g nil 0 nil %d %d t \"cycle\")" y shmVdd shmLo shmHi)))
+             "fallTime(%s %g nil 0 nil %d %d t \"cycle\")" shmV(y) shmVdd shmLo shmHi)))
     ;; (thetas are % of the transition from initVal, so 10 90 = 0.9*VDD -> 0.1*VDD)
     tpd  = shmDelays(shmCross(y shmHalf))
     shmEdges   = shmEdges + length(tpd)
@@ -131,7 +149,6 @@ shmRows = reverse(shmRows)
 ;;   1. IT(DUT/VDD) * VDD       2. any saved current named <DUT>:VDD / <DUT>/VDD
 ;;   3. Spectre <DUT>:pwr       4. Spectre total :pwr
 procedure(shmIsWave(w) w && drIsWaveform(w))
-shmDutName = car(last(parseString(shmDut "/")))
 shmP = nil  shmPwrSrc = nil
 let((w)
   w = shmTry(sprintf(nil "IT(\"%s/VDD\")" shmDut))
@@ -159,8 +176,8 @@ shmEnergy = integ(shmP)
 
 ;; ---------------------------------------------------------------- report
 shmHdr = "net,rise_max_ps,rise_avg_ps,fall_max_ps,fall_avg_ps,tpd_max_ps,tpd_avg_ps,edges"
-printf("\n=== Shifter_8bit_sized metrics  (VDD = %.3f V, slew %d-%d%%) ===\n"
-       shmVdd shmLo shmHi)
+printf("\n=== Shifter_8bit_sized %s metrics  (VDD = %.3f V, slew %d-%d%%) ===\n"
+       if(shmPexNetlist "post-layout" "schematic") shmVdd shmLo shmHi)
 printf("%-5s %10s %10s %10s %10s %10s %10s %6s\n"
        "net" "rise max" "rise avg" "fall max" "fall avg" "tpd max" "tpd avg" "edges")
 shmPort = outfile(shmCsv)
@@ -185,6 +202,7 @@ when(shmEdges > 0
   printf("Energy / output edge = %.3f fJ\n" shmEnergy * 1e15 / shmEdges))
 fprintf(shmPort "\nmetric,value\n")
 fprintf(shmPort "power_source,%s\n" shmPwrSrc)
+fprintf(shmPort "mode,%s\n" if(shmPexNetlist "post-layout" "schematic"))
 fprintf(shmPort "vdd_V,%.4f\npower_avg_uW,%.4f\npower_peak_uW,%.4f\nenergy_pJ,%.4f\n"
         shmVdd shmPavg*1e6 shmPpeak*1e6 shmEnergy*1e12)
 close(shmPort)
