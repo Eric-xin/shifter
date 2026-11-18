@@ -1,0 +1,10 @@
+*.cdslck
+*.cdslck.*
+*.oa-
+*.oa~
+*.dm-
+data.dm-
+panic*
+*.log
+.nfs*
+**/maestro/results/
