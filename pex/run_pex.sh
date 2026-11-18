@@ -202,10 +202,30 @@ EOF
 } > rules.pex
 strip_specs "$PEX_DECK" > pex_deck.rules
 [ "$LVS_DECK" = none ] || strip_specs "$LVS_DECK" > lvs_deck.rules
-# Relative INCLUDEs inside the decks must still resolve from their PDK dirs.
-sed -i -E "s#^([[:space:]]*INCLUDE[[:space:]]+\")([^/\"][^\"]*)\"#\1$(dirname "$PEX_DECK")/\2\"#I" pex_deck.rules
-[ "$LVS_DECK" = none ] || \
-  sed -i -E "s#^([[:space:]]*INCLUDE[[:space:]]+\")([^/\"][^\"]*)\"#\1$(dirname "$LVS_DECK")/\2\"#I" lvs_deck.rules
+# Relative INCLUDEs in the copied decks must resolve from their PDK dirs.
+# Quoted or bare; if the target doesn't exist there (decks sometimes expect a
+# user-supplied switch file), comment it out so Calibre uses the deck defaults.
+fix_includes() {  # $1 = copied deck, $2 = original deck dir
+  python3 - "$1" "$2" <<'PY'
+import re, sys, os
+path, base = sys.argv[1], sys.argv[2]
+pat = re.compile(r'^(\s*INCLUDE\s+)("?)([^"\s]+)("?)(.*)$', re.I)
+out = []
+for n, line in enumerate(open(path, errors="replace").read().split("\n"), 1):
+    m = pat.match(line)
+    if m and not m.group(3).startswith(("/", "$")):
+        target = os.path.normpath(os.path.join(base, m.group(3)))
+        if os.path.exists(target):
+            line = f'{m.group(1)}"{target}"{m.group(5)}'
+        else:
+            print(f"  {os.path.basename(path)}:{n}: INCLUDE {m.group(3)} not found in {base} -- commented out")
+            line = "// " + line
+    out.append(line)
+open(path, "w").write("\n".join(out))
+PY
+}
+fix_includes pex_deck.rules "$(dirname "$PEX_DECK")"
+[ "$LVS_DECK" = none ] || fix_includes lvs_deck.rules "$(dirname "$LVS_DECK")"
 
 # --- 4. LVS -------------------------------------------------------------------
 say "Calibre LVS"
