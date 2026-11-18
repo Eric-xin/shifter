@@ -9,6 +9,7 @@
 ;;   shell:    ocean -nograph -restore Shifter/ocean/shifter_metrics.ocn
 ;;
 ;; Results print to the log and are written to shmCsv.
+;; Schematic only (no extraction): load shifter_metrics_schematic.ocn instead.
 ;;
 ;; Post-layout: run pex/run_pex.sh, then set shmPexNetlist to the tb_pex.scs it
 ;; prints. The same TB is simulated with the Calibre-extracted shifter (R+C+CC).
@@ -19,7 +20,9 @@ shmCell   = "Shifter_8bit_sized_tb"
 shmDut    = "/I0"                 ; DUT instance in the TB schematic
 shmVddNets = list("VDD" "vdd!" "VDD!" "vdd")  ; supply net candidates, first found wins
 shmVddVal = nil                   ; set a number (e.g. 1.0) to skip reading VDD from the sim
-shmPexNetlist = nil               ; path to pex/run/tb_pex.scs for post-layout, nil = schematic
+;; path to pex/run/tb_pex.scs for post-layout, nil = schematic. A value set
+;; before loading (e.g. by shifter_metrics_schematic.ocn) is kept.
+unless(boundp('shmPexNetlist) shmPexNetlist = nil)
 shmRunSim = t                     ; nil = only analyze shmResDir from a prior run
 shmResDir = if(shmPexNetlist "./shifter_metrics_pex_sim" "./shifter_metrics_sim")
 shmStop   = 10u

@@ -1,0 +1,14 @@
+;; shifter_metrics_schematic.ocn -- schematic-only (pre-layout) metrics
+;;
+;; Simulates Shifter_8bit_sized_tb with the schematic DUT -- no Calibre / PEX --
+;; and reports slew, delay and power via shifter_metrics.ocn.
+;; Output: ./shifter_metrics.csv, sim data in ./shifter_metrics_sim
+;;
+;; Usage (from the directory you start Virtuoso in, e.g. ~/Cadence):
+;;   CIW:    load("Shifter/ocean/shifter_metrics_schematic.ocn")
+;;   shell:  ocean -nograph -restore Shifter/ocean/shifter_metrics_schematic.ocn
+;; If the repo lives elsewhere, set shmOceanDir before loading.
+
+shmPexNetlist = nil
+unless(boundp('shmOceanDir) shmOceanDir = "Shifter/ocean")
+load(strcat(shmOceanDir "/shifter_metrics.ocn"))
