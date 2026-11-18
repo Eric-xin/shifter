@@ -24,6 +24,7 @@ LAYERMAP=${LAYERMAP:-}       # optional strmout layer map
 TECH_LIB=${TECH_LIB:-tsmcN65}               # tech library Shifter is attached to
 TECH_DIR_USER=${TECH_DIR:-}                  # set to force the tech library location
 TECH_DIR=${TECH_DIR:-$PDK/tsmcN65}
+TECH_SEARCH=${TECH_SEARCH:-/courses/ee4321/tech}  # where to look for <TECH_LIB>/tech.db
 NETLIST_DIR=${NETLIST_DIR:-$HOME/simulation/$TB/spectre/schematic/netlist}
 RUN=${RUN:-$HERE/run}
 FORCE=${FORCE:-0}            # 1 = continue to PEX even if LVS is not CORRECT
@@ -80,6 +81,23 @@ else
   { echo "DEFINE $TECH_LIB $TECH_DIR"; echo "INCLUDE $CDS_DIR/cds.lib"; } > cds.lib
 fi
 [ -n "$TECH_DIR_USER" ] && echo "DEFINE $TECH_LIB $TECH_DIR_USER" >> cds.lib
+
+# The tech library must contain tech.db (the compiled tech file strmout opens).
+tech_now=$(awk -v l="$TECH_LIB" 'toupper($1)=="DEFINE" && $2==l {d=$3} END{print d}' cds.lib)
+if [ -z "$tech_now" ] || [ ! -r "$tech_now/tech.db" ]; then
+  echo "No readable tech.db for $TECH_LIB at '${tech_now:-<undefined>}'; searching $TECH_SEARCH ..."
+  mapfile -t techs < <(find "$TECH_SEARCH" -path "*/$TECH_LIB/tech.db" -readable 2>/dev/null | sort)
+  if [ "${#techs[@]}" -ge 1 ]; then
+    [ "${#techs[@]}" -gt 1 ] && printf '  candidate: %s\n' "${techs[@]}"
+    tech_now=$(dirname "${techs[0]}")
+    echo "Using $tech_now (override with TECH_DIR=...)"
+    echo "DEFINE $TECH_LIB $tech_now" >> cds.lib
+  else
+    die "no $TECH_LIB/tech.db under $TECH_SEARCH -- in Virtuoso's CIW run
+  ddGetObj(\"$TECH_LIB\")~>readPath
+and rerun with TECH_DIR=<that path>"
+  fi
+fi
 echo "cds.lib for batch tools:"; sed 's/^/  /' cds.lib
 
 lib_diag() {  # $1 = tool log
