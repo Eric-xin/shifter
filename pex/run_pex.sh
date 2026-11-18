@@ -154,6 +154,11 @@ setEQUIV = ""
 incFILE = ""
 auCdlDefNetlistProc = "ansCdlSubcktCall"
 EOF
+# auCdl netlisting refuses to run unless this is "Analog" (Virtuoso sets it in
+# the GUI session, a plain shell doesn't).
+export CDS_Netlisting_Mode=${CDS_Netlisting_Mode:-Analog}
+[ "$CDS_Netlisting_Mode" = Analog ] || \
+  { echo "CDS_Netlisting_Mode=$CDS_Netlisting_Mode, forcing Analog for si"; export CDS_Netlisting_Mode=Analog; }
 if ! (si "$RUN" -batch -command netlist -cdslib "$RUN/cds.lib") \
         > si.out 2>&1 || [ ! -s "$CELL.cdl" ]; then
   lib_diag "$RUN/si.out"; die "si (CDL netlist) failed"
