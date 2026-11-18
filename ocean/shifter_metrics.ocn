@@ -63,7 +63,7 @@ if(shmRunSim then
   temp(27)
   ;; Naming signals in save() switches Spectre to "selected only", so every
   ;; voltage the script reads must be listed here too.
-  foreach(n append(list(shmVddNet) shmIns shmOuts) save('v strcat("/" n)))
+  foreach(n cons(shmVddNet append(shmIns shmOuts)) save('v strcat("/" n)))
   save('i strcat(shmDut "/VDD"))
   run()
 else
