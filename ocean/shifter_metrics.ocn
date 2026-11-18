@@ -66,6 +66,9 @@ if(shmRunSim then
   ;; voltage the script reads must be listed here too.
   foreach(n append(shmVddNets append(shmIns shmOuts)) save('v strcat("/" n)))
   save('i strcat(shmDut "/VDD"))
+  ;; Fallbacks for power: all terminal currents + Spectre's own power signals.
+  errset(saveOption('currents "all"))
+  errset(saveOption('pwr "all"))
   run()
 else
   openResults(shmResDir)
@@ -93,8 +96,6 @@ unless(numberp(shmVdd)
   error("Could not determine VDD from %s (tried %L and the inputs). Set shmVddVal. \
 Saved signals: %L\n" shmResDir shmVddNets errset(outputs())))
 shmHalf = shmVdd / 2.0
-when(null(shmTry(sprintf(nil "IT(\"%s/VDD\")" shmDut)))
-  error("No current saved for %s/VDD -- check shmDut is the DUT instance.\n" shmDut))
 
 ;; Every input edge time, sorted -- used to attribute each output edge to its cause.
 shmInEdges = sort(foreach(mapcan n shmIns copy(shmCross(n shmHalf))) 'lessp)
@@ -125,8 +126,32 @@ foreach(y shmOuts
                         shmMax(tpd) shmAvg(tpd) length(tpd)) shmRows)))
 shmRows = reverse(shmRows)
 
-;; Power: current into the DUT's VDD pin times VDD.
-shmP      = IT(strcat(shmDut "/VDD")) * shmVdd
+;; Power, first method that yields a waveform:
+;;   1. IT(DUT/VDD) * VDD       2. any saved current named <DUT>:VDD / <DUT>/VDD
+;;   3. Spectre <DUT>:pwr       4. Spectre total :pwr
+procedure(shmIsWave(w) w && drIsWaveform(w))
+shmDutName = car(last(parseString(shmDut "/")))
+shmP = nil  shmPwrSrc = nil
+let((w)
+  w = shmTry(sprintf(nil "IT(\"%s/VDD\")" shmDut))
+  when(shmIsWave(w) shmP = w * shmVdd  shmPwrSrc = sprintf(nil "IT(%s/VDD) * VDD" shmDut)))
+unless(shmP
+  let((pat w)
+    pat = upperCase(sprintf(nil "^/?%s[:/]VDD$" shmDutName))
+    foreach(name car(errset(outputs()))
+      when(!shmP && stringp(name) && rexMatchp(pat upperCase(name))
+        w = shmTry(sprintf(nil "getData(\"%s\")" name))
+        when(shmIsWave(w) shmP = w * shmVdd  shmPwrSrc = strcat(name " * VDD"))))))
+foreach(name list(strcat(shmDutName ":pwr") ":pwr")
+  unless(shmP
+    let((w) w = shmTry(sprintf(nil "getData(\"%s\")" name))
+      when(shmIsWave(w) shmP = w  shmPwrSrc = strcat("Spectre " name))))))
+unless(shmP
+  error("No supply current or power signal found for %s. Check shmDut is the DUT \
+instance and rerun with shmRunSim = t. Saved signals: %L\n" shmDut errset(outputs())))
+printf("Power measured from %s\n" shmPwrSrc)
+;; Current is positive into the terminal, but flip if the sign convention differs.
+when(average(shmP) < 0 shmP = -1 * shmP)
 shmPavg   = average(shmP)
 shmPpeak  = ymax(shmP)
 shmEnergy = integ(shmP)
