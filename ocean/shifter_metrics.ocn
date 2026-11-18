@@ -14,6 +14,8 @@
 shmLib    = "Shifter"
 shmCell   = "Shifter_8bit_sized_tb"
 shmDut    = "/I0"                 ; DUT instance in the TB schematic
+shmVddNet = "VDD"                 ; TB supply net name
+shmVddVal = nil                   ; set a number (e.g. 1.0) to skip reading VDD from the sim
 shmRunSim = t                     ; nil = only analyze shmResDir from a prior run
 shmResDir = "./shifter_metrics_sim"
 shmStop   = 10u
@@ -59,6 +61,9 @@ if(shmRunSim then
             list(shmModel "tt_dio_33"))
   analysis('tran ?stop shmStop ?errpreset "conservative")
   temp(27)
+  ;; Naming signals in save() switches Spectre to "selected only", so every
+  ;; voltage the script reads must be listed here too.
+  foreach(n append(list(shmVddNet) shmIns shmOuts) save('v strcat("/" n)))
   save('i strcat(shmDut "/VDD"))
   run()
 else
@@ -67,8 +72,14 @@ else
 selectResult('tran)
 
 ;; ---------------------------------------------------------------- measure
-shmVdd  = ymax(VT("/VDD"))
+shmVdd = shmVddVal || shmTry(sprintf(nil "ymax(VT(\"/%s\"))" shmVddNet))
+unless(numberp(shmVdd)
+  error("No waveform for /%s in %s -- check shmVddNet matches the TB supply net, \
+or set shmVddVal (e.g. 1.0). Saved signals: %L\n" shmVddNet shmResDir
+        errset(outputs())))
 shmHalf = shmVdd / 2.0
+when(null(shmTry(sprintf(nil "IT(\"%s/VDD\")" shmDut)))
+  error("No current saved for %s/VDD -- check shmDut is the DUT instance.\n" shmDut))
 
 ;; Every input edge time, sorted -- used to attribute each output edge to its cause.
 shmInEdges = sort(foreach(mapcan n shmIns copy(shmCross(n shmHalf))) 'lessp)
