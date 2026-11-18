@@ -1,0 +1,138 @@
+;; shifter_metrics.ocn -- transient metrics for Shifter_8bit_sized
+;;
+;; Runs Shifter_8bit_sized_tb in Spectre (or re-reads an existing run) and reports,
+;; per output Y0..Y7:  10-90% rise/fall slew, propagation delay;  and for the DUT:
+;; average / peak power and total energy drawn from VDD.
+;;
+;; Usage (from the Cadence library's parent dir, where cds.lib lives):
+;;   CIW:      load("Shifter/ocean/shifter_metrics.ocn")
+;;   shell:    ocean -nograph -restore Shifter/ocean/shifter_metrics.ocn
+;;
+;; Results print to the log and are written to shmCsv.
+
+;; ---------------------------------------------------------------- config
+shmLib    = "Shifter"
+shmCell   = "Shifter_8bit_sized_tb"
+shmDut    = "/I0"                 ; DUT instance in the TB schematic
+shmRunSim = t                     ; nil = only analyze shmResDir from a prior run
+shmResDir = "./shifter_metrics_sim"
+shmStop   = 10u
+shmLo     = 10                    ; slew thresholds, % of VDD
+shmHi     = 90
+shmCsv    = "./shifter_metrics.csv"
+shmModel  = "/courses/ee4321/tech/tsmc65/T-N65-CM-SP-018-K3_MOM/Base_PDK/PDK_CRN65GP_v1.0c_official_IC61_20101010/tsmcN65/../models/spectre/crn65gplus_2d5_lk_v1d0.scs"
+shmOuts   = list("Y0" "Y1" "Y2" "Y3" "Y4" "Y5" "Y6" "Y7")
+shmIns    = list("A0" "A1" "A2" "A3" "A4" "A5" "A6" "A7" "S0" "S1" "S2")
+
+;; ---------------------------------------------------------------- helpers
+;; Turn a number / list / waveform (from multiple=t measurements) into a list of numbers.
+procedure(shmVals(w)
+  cond(
+    (null(w) nil)
+    (numberp(w) list(w))
+    (listp(w) w)
+    (drIsWaveform(w)
+      let((yv out)
+        yv = drGetWaveformYVec(w)
+        for(i 0 drVectorLength(yv)-1 out = cons(drGetElem(yv i) out))
+        reverse(out)))
+    (t nil)))
+
+;; Evaluate a measurement, returning nil instead of erroring when there are no edges.
+procedure(shmTry(expr)
+  let((r) r = errset(evalstring(expr)) when(r car(r))))
+
+procedure(shmMax(l) when(l apply('max l)))
+procedure(shmAvg(l) when(l (apply('plus l) / length(l))))
+procedure(shmFmt(x scale) if(x sprintf(nil "%.2f" x*scale) "-"))
+
+;; All crossing times of net at level v (any direction).
+procedure(shmCross(net v)
+  shmVals(shmTry(sprintf(nil "cross(VT(\"/%s\") %g 1 'either t \"cycle\")" net v))))
+
+;; ---------------------------------------------------------------- simulate
+if(shmRunSim then
+  simulator('spectre)
+  design(shmLib shmCell "schematic")
+  resultsDir(shmResDir)
+  modelFile(list(shmModel "tt") list(shmModel "tt_bip") list(shmModel "tt_dio")
+            list(shmModel "tt_dio_33"))
+  analysis('tran ?stop shmStop ?errpreset "conservative")
+  temp(27)
+  save('i strcat(shmDut "/VDD"))
+  run()
+else
+  openResults(shmResDir)
+)
+selectResult('tran)
+
+;; ---------------------------------------------------------------- measure
+shmVdd  = ymax(VT("/VDD"))
+shmHalf = shmVdd / 2.0
+
+;; Every input edge time, sorted -- used to attribute each output edge to its cause.
+shmInEdges = sort(foreach(mapcan n shmIns copy(shmCross(n shmHalf))) 'lessp)
+
+;; Delay of an output edge = time since the most recent input edge before it.
+procedure(shmDelays(outTimes)
+  let((res last)
+    foreach(t0 outTimes
+      last = nil
+      foreach(ti shmInEdges when(ti <= t0 last = ti))
+      when(last res = cons(t0 - last res)))
+    res))
+
+shmRows = nil
+shmAllRise = nil  shmAllFall = nil  shmAllTpd = nil  shmEdges = 0
+foreach(y shmOuts
+  let((rise fall tpd)
+    rise = shmVals(shmTry(sprintf(nil
+             "riseTime(VT(\"/%s\") 0 nil %g nil %d %d t \"cycle\")" y shmVdd shmLo shmHi)))
+    fall = shmVals(shmTry(sprintf(nil
+             "fallTime(VT(\"/%s\") %g nil 0 nil %d %d t \"cycle\")" y shmVdd shmHi shmLo)))
+    tpd  = shmDelays(shmCross(y shmHalf))
+    shmEdges   = shmEdges + length(tpd)
+    shmAllRise = append(shmAllRise rise)
+    shmAllFall = append(shmAllFall fall)
+    shmAllTpd  = append(shmAllTpd tpd)
+    shmRows = cons(list(y shmMax(rise) shmAvg(rise) shmMax(fall) shmAvg(fall)
+                        shmMax(tpd) shmAvg(tpd) length(tpd)) shmRows)))
+shmRows = reverse(shmRows)
+
+;; Power: current into the DUT's VDD pin times VDD.
+shmP      = IT(strcat(shmDut "/VDD")) * shmVdd
+shmPavg   = average(shmP)
+shmPpeak  = ymax(shmP)
+shmEnergy = integ(shmP)
+
+;; ---------------------------------------------------------------- report
+shmHdr = "net,rise_max_ps,rise_avg_ps,fall_max_ps,fall_avg_ps,tpd_max_ps,tpd_avg_ps,edges"
+printf("\n=== Shifter_8bit_sized metrics  (VDD = %.3f V, slew %d-%d%%) ===\n"
+       shmVdd shmLo shmHi)
+printf("%-5s %10s %10s %10s %10s %10s %10s %6s\n"
+       "net" "rise max" "rise avg" "fall max" "fall avg" "tpd max" "tpd avg" "edges")
+shmPort = outfile(shmCsv)
+fprintf(shmPort "%s\n" shmHdr)
+foreach(r append(shmRows
+                 list(list("ALL" shmMax(shmAllRise) shmAvg(shmAllRise)
+                           shmMax(shmAllFall) shmAvg(shmAllFall)
+                           shmMax(shmAllTpd) shmAvg(shmAllTpd) shmEdges)))
+  let((cells)
+    cells = mapcar(lambda((x) shmFmt(x 1e12)) list(nthelem(2 r) nthelem(3 r) nthelem(4 r)
+                                                  nthelem(5 r) nthelem(6 r) nthelem(7 r)))
+    printf("%-5s %10s %10s %10s %10s %10s %10s %6d\n"
+           car(r) nth(0 cells) nth(1 cells) nth(2 cells) nth(3 cells) nth(4 cells)
+           nth(5 cells) nthelem(8 r))
+    fprintf(shmPort "%s,%s,%s,%s,%s,%s,%s,%d\n" car(r) nth(0 cells) nth(1 cells)
+            nth(2 cells) nth(3 cells) nth(4 cells) nth(5 cells) nthelem(8 r))))
+printf("(times in ps)\n\n")
+printf("Power   avg  = %.3f uW\n" shmPavg * 1e6)
+printf("Power   peak = %.3f uW\n" shmPpeak * 1e6)
+printf("Energy  total= %.3f pJ over %g s\n" shmEnergy * 1e12 shmStop)
+when(shmEdges > 0
+  printf("Energy / output edge = %.3f fJ\n" shmEnergy * 1e15 / shmEdges))
+fprintf(shmPort "\nmetric,value\n")
+fprintf(shmPort "vdd_V,%.4f\npower_avg_uW,%.4f\npower_peak_uW,%.4f\nenergy_pJ,%.4f\n"
+        shmVdd shmPavg*1e6 shmPpeak*1e6 shmEnergy*1e12)
+close(shmPort)
+printf("Wrote %s\n" shmCsv)

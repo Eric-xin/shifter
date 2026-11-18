@@ -8,3 +8,7 @@ panic*
 *.log
 .nfs*
 **/maestro/results/
+
+# Verilog sim outputs
+verilog/*.vvp
+verilog/*.vcd
