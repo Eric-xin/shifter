@@ -14,7 +14,7 @@
 shmLib    = "Shifter"
 shmCell   = "Shifter_8bit_sized_tb"
 shmDut    = "/I0"                 ; DUT instance in the TB schematic
-shmVddNet = "VDD"                 ; TB supply net name
+shmVddNets = list("VDD" "vdd!" "VDD!" "vdd")  ; supply net candidates, first found wins
 shmVddVal = nil                   ; set a number (e.g. 1.0) to skip reading VDD from the sim
 shmRunSim = t                     ; nil = only analyze shmResDir from a prior run
 shmResDir = "./shifter_metrics_sim"
@@ -44,7 +44,8 @@ procedure(shmVals(w)
 procedure(shmTry(expr)
   let((r) r = errset(evalstring(expr)) when(r car(r))))
 
-procedure(shmMax(l) when(l apply('max l)))
+procedure(shmMax(l)
+  let((m) when(l m = car(l) foreach(x cdr(l) when(x > m m = x))) m))
 procedure(shmAvg(l) when(l (apply('plus l) / length(l))))
 procedure(shmFmt(x scale) if(x sprintf(nil "%.2f" x*scale) "-"))
 
@@ -63,7 +64,7 @@ if(shmRunSim then
   temp(27)
   ;; Naming signals in save() switches Spectre to "selected only", so every
   ;; voltage the script reads must be listed here too.
-  foreach(n cons(shmVddNet append(shmIns shmOuts)) save('v strcat("/" n)))
+  foreach(n append(shmVddNets append(shmIns shmOuts)) save('v strcat("/" n)))
   save('i strcat(shmDut "/VDD"))
   run()
 else
@@ -72,11 +73,25 @@ else
 selectResult('tran)
 
 ;; ---------------------------------------------------------------- measure
-shmVdd = shmVddVal || shmTry(sprintf(nil "ymax(VT(\"/%s\"))" shmVddNet))
+;; VDD: explicit value > first supply net found > highest input-pulse level.
+shmVdd = shmVddVal
+unless(shmVdd
+  foreach(n shmVddNets
+    unless(shmVdd
+      let((v) v = shmTry(sprintf(nil "ymax(VT(\"/%s\"))" n))
+        when(numberp(v) && v > 0.1
+          shmVdd = v
+          printf("VDD taken from net /%s\n" n))))))
+unless(shmVdd
+  let((vs)
+    vs = setof(v mapcar(lambda((n) shmTry(sprintf(nil "ymax(VT(\"/%s\"))" n))) shmIns)
+               numberp(v))
+    when(vs
+      shmVdd = shmMax(vs)
+      printf("No supply net saved; VDD taken from input high level\n"))))
 unless(numberp(shmVdd)
-  error("No waveform for /%s in %s -- check shmVddNet matches the TB supply net, \
-or set shmVddVal (e.g. 1.0). Saved signals: %L\n" shmVddNet shmResDir
-        errset(outputs())))
+  error("Could not determine VDD from %s (tried %L and the inputs). Set shmVddVal. \
+Saved signals: %L\n" shmResDir shmVddNets errset(outputs())))
 shmHalf = shmVdd / 2.0
 when(null(shmTry(sprintf(nil "IT(\"%s/VDD\")" shmDut)))
   error("No current saved for %s/VDD -- check shmDut is the DUT instance.\n" shmDut))
