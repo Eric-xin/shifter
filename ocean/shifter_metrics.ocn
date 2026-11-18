@@ -116,7 +116,8 @@ foreach(y shmOuts
     rise = shmVals(shmTry(sprintf(nil
              "riseTime(VT(\"/%s\") 0 nil %g nil %d %d t \"cycle\")" y shmVdd shmLo shmHi)))
     fall = shmVals(shmTry(sprintf(nil
-             "fallTime(VT(\"/%s\") %g nil 0 nil %d %d t \"cycle\")" y shmVdd shmHi shmLo)))
+             "fallTime(VT(\"/%s\") %g nil 0 nil %d %d t \"cycle\")" y shmVdd shmLo shmHi)))
+    ;; (thetas are % of the transition from initVal, so 10 90 = 0.9*VDD -> 0.1*VDD)
     tpd  = shmDelays(shmCross(y shmHalf))
     shmEdges   = shmEdges + length(tpd)
     shmAllRise = append(shmAllRise rise)
@@ -183,6 +184,7 @@ printf("Energy  total= %.3f pJ over %g s\n" shmEnergy * 1e12 shmStop)
 when(shmEdges > 0
   printf("Energy / output edge = %.3f fJ\n" shmEnergy * 1e15 / shmEdges))
 fprintf(shmPort "\nmetric,value\n")
+fprintf(shmPort "power_source,%s\n" shmPwrSrc)
 fprintf(shmPort "vdd_V,%.4f\npower_avg_uW,%.4f\npower_peak_uW,%.4f\nenergy_pJ,%.4f\n"
         shmVdd shmPavg*1e6 shmPpeak*1e6 shmEnergy*1e12)
 close(shmPort)
