@@ -82,6 +82,16 @@ else
 fi
 [ -n "$TECH_DIR_USER" ] && echo "DEFINE $TECH_LIB $TECH_DIR_USER" >> cds.lib
 
+# auCdl netlisting needs Cadence's basic library (basic/nlpglobals).
+if ! grep -qE '^DEFINE basic ' cds.lib; then
+  ch=$(cds_root si 2>/dev/null || cds_root virtuoso 2>/dev/null || true)
+  if [ -n "$ch" ] && [ -d "$ch/tools/dfII/etc/cdslib/basic" ]; then
+    echo "DEFINE basic $ch/tools/dfII/etc/cdslib/basic" >> cds.lib
+  else
+    echo "WARNING: could not locate Cadence's basic library; si may fail on nlpglobals"
+  fi
+fi
+
 # The tech library must contain tech.db (the compiled tech file strmout opens).
 tech_now=$(awk -v l="$TECH_LIB" 'toupper($1)=="DEFINE" && $2==l {d=$3} END{print d}' cds.lib)
 if [ -z "$tech_now" ] || [ ! -r "$tech_now/tech.db" ]; then

@@ -5,10 +5,11 @@ let((out port tf lib)
   out = getShellEnvVar("PEX_CDSLIB_OUT")
   port = outfile(out)
   fprintf(port "-- libraries as seen by a Virtuoso session (dumped by run_pex.sh)\n")
+  ;; Include Cadence's built-ins (basic, analogLib) too: si does not get them
+  ;; from cdsDotLibs, and auCdl needs basic/nlpglobals. Other tools may warn
+  ;; that cdsDotLibs "redefines" them -- harmless.
   foreach(l ddGetLibList()
-    ;; Cadence's own built-ins (basic, analogLib, ...) are predefined anyway.
-    unless(rexMatchp("/dfII/etc/cdslib/" l~>readPath)
-      fprintf(port "DEFINE %s %s\n" l~>name l~>readPath)))
+    fprintf(port "DEFINE %s %s\n" l~>name l~>readPath))
   close(port)
   lib = ddGetObj(getShellEnvVar("PEX_LIB"))
   tf = car(errset(techGetTechFile(lib)))
