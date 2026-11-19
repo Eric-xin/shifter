@@ -31,7 +31,9 @@ transition time (slew), propagation delay and power in transient simulation.
 The shifter is a three-stage logarithmic shifter. Stage $k$ ($k=0,1,2$) is a
 row of eight 2:1 multiplexers controlled by select bit $S_k$, which either
 passes each bit through or takes the bit $2^k$ positions away, so the three
-stages together realize any shift amount $0$--$7$. Complementary selects
+stages together realize any shift amount $0$--$7$. The shifter performs a
+logical right shift, $Y_i = A_{i+S}$ with zeros shifted into the vacated
+upper bits, where $S = 4S_2 + 2S_1 + S_0$. Complementary selects
 $S_k$/$\overline{S_k}$ are provided at the cell boundary.
 
 Each multiplexer is built from two CMOS transmission gates
@@ -92,10 +94,11 @@ multiplexer\,+\,inverter rows (one per shift stage).}
 %--------------------------------------------------------------------------
 \section{Verification}
 
-\subsection{Layout versus schematic}
-The layout (Fig.~\ref{fig:layout}) was checked with Calibre nmLVS
-v2025.1\_16.10 against the schematic netlist. The comparison result is
-\textbf{CORRECT} (Fig.~\ref{fig:lvs}).
+\subsection{Physical verification}
+The layout (Fig.~\ref{fig:layout}) was checked with Calibre nmDRC and nmLVS
+v2025.1\_16.10. DRC reports no violations (Fig.~\ref{fig:drc}; the only
+listed check is the informational density print), and LVS against the
+schematic netlist reports \textbf{CORRECT} (Fig.~\ref{fig:lvs}).
 
 \begin{figure}[H]
 \centering
@@ -107,11 +110,26 @@ alternating VDD/VSS rails, multiplexer/inverter stages in columns.}
 
 \begin{figure}[H]
 \centering
+\includegraphics[width=\linewidth]{shifter_designclean.png}
+\caption{Calibre DRC summary and RVE for \texttt{Shifter\_8bit\_sized}: no
+rule violations.}
+\label{fig:drc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
 \includegraphics[width=\linewidth]{lvs_report.png}
 \caption{Calibre LVS report: overall comparison result CORRECT for
 \texttt{Shifter\_8bit\_sized}.}
 \label{fig:lvs}
 \end{figure}
+
+\subsection{Functional verification}
+The shifter was simulated at transistor level in ADE with a Verilog-A
+testbench block that drives all $2^8 \times 2^3 = 2048$ combinations of $A$
+and $S$ (one vector every \SI{2}{ns}), samples $Y$ at 90\,\% of each vector
+period and compares it with the expected logical right shift. All 2048
+vectors pass in both Spectre and UltraSim.
 
 \begin{table}[H]
 \centering
@@ -121,8 +139,10 @@ alternating VDD/VSS rails, multiplexer/inverter stages in columns.}
 \toprule
 Check & Tool & Result \\
 \midrule
-LVS (layout vs.\ schematic)      & Calibre nmLVS v2025.1   & CORRECT \\
-Transient simulation             & Spectre 23.1 (APS)      & completed, 0 errors \\
+DRC                               & Calibre nmDRC v2025.1  & clean \\
+LVS (layout vs.\ schematic)       & Calibre nmLVS v2025.1  & CORRECT \\
+Function, 2048 vectors            & Spectre 23.1 (APS)     & 2048/2048 pass \\
+Function, 2048 vectors            & UltraSim 18.1          & 2048/2048 pass \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -131,10 +151,10 @@ Transient simulation             & Spectre 23.1 (APS)      & completed, 0 errors
 \section{Characterization}
 
 \subsection{Setup}
-The testbench \texttt{Shifter\_8bit\_sized\_tb} drives the inputs and
-selects from voltage sources and loads each output with an
-\texttt{INV\_150n} instantiated with multiplier $m=4$ (a fanout-of-4 style
-load). Metrics are extracted from the transient waveforms.
+The same Verilog-A block measures the metrics during the simulation. It sits
+in series with the shifter's VDD pin as a \SI{0}{V} ammeter, so power and
+energy include only the shifter and not its loads. Each output drives four
+parallel \texttt{INV\_150n} inverters (a fanout-of-4 load).
 
 \begin{table}[H]
 \centering
@@ -147,115 +167,95 @@ Parameter & Value \\
 Process / models      & TSMC 65\,nm GP, \texttt{crn65gplus\_2d5\_lk\_v1d0}, TT \\
 Supply $V_{DD}$       & \SI{1.0}{V} \\
 Temperature           & \SI{27}{\celsius} \\
-Simulator             & Spectre 23.1 (APS), \texttt{errpreset=conservative} \\
-Analysis              & transient, \SIrange{0}{10}{\micro s} (3234 time steps) \\
-Circuit size          & 224 MOSFETs, 103 nodes, 15 sources \\
-Output load           & \texttt{INV\_150n}, $m=4$ per output \\
-Slew definition       & 10\%--90\% of $V_{DD}$ \\
-Delay definition      & 50\% input edge $\rightarrow$ 50\% output edge \\
+Simulators            & Spectre 23.1 (APS, \texttt{errpreset=conservative}); UltraSim 18.1 \\
+Analysis              & transient, \SIrange{0}{10}{\micro s} \\
+Stimulus              & 2048 vectors, \SI{2}{ns} each from $t=\SI{2}{ns}$, edges \SI{25}{ps} \\
+Circuit size          & 224 MOSFETs (160 shifter, 64 load), 105 nodes \\
+Output load           & 4 $\times$ \texttt{INV\_150n} per output \\
+Slew definition       & 10\,\%--90\,\% of $V_{DD}$, every output edge \\
+Delay definition      & 50\,\% of input edge $\rightarrow$ 50\,\% of output edge \\
 Power                 & $V_{DD} \times$ current into the shifter's VDD pin \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Propagation delay is measured for every output transition from the most
-recent input or select transition that precedes it, so it covers both data
-($A \rightarrow Y$) and select ($S \rightarrow Y$) paths exercised by the
-stimulus.
+Because every vector changes the inputs at a known time, the delay of each
+output edge is measured from the input transition of its own vector; it
+covers both data ($A \rightarrow Y$) and select ($S \rightarrow Y$) paths,
+over 1003 output transitions in total.
 
-\subsection{Timing}
-
-\begin{table}[H]
-\centering
-\caption{Per-output timing, schematic (pre-layout). All times in ps.}
-\label{tab:timing}
-\begin{tabular}{l S[table-format=2.2] S[table-format=2.2] c c S[table-format=2.2] S[table-format=2.2] S[table-format=2.0]}
-\toprule
- & \multicolumn{2}{c}{Rise slew} & \multicolumn{2}{c}{Fall slew\textsuperscript{a}}
- & \multicolumn{2}{c}{Delay $t_{pd}$} & \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-Output & {max} & {avg} & max & avg & {max} & {avg} & {Edges} \\
-\midrule
-$Y_0$ & 20.64 & 20.52 & \textemdash & \textemdash & 65.34 & 60.06 & 10 \\
-$Y_1$ & 20.65 & 20.53 & \textemdash & \textemdash & 62.43 & 51.08 & 10 \\
-$Y_2$ & 20.63 & 20.52 & \textemdash & \textemdash & 65.34 & 56.34 & 10 \\
-$Y_3$ & 20.64 & 20.56 & \textemdash & \textemdash & 62.43 & 47.01 & 10 \\
-$Y_4$ & 20.60 & 20.59 & \textemdash & \textemdash & 65.36 & 56.26 &  4 \\
-$Y_5$ & 20.64 & 20.61 & \textemdash & \textemdash & 62.43 & 51.75 &  4 \\
-$Y_6$ & 20.60 & 20.58 & \textemdash & \textemdash & 65.36 & 57.07 &  4 \\
-$Y_7$ & 20.61 & 20.61 & \textemdash & \textemdash & 62.43 & 37.37 &  5 \\
-\midrule
-All   & 20.65 & 20.55 & \textemdash & \textemdash & 65.36 & 52.49 & 57 \\
-\bottomrule
-\end{tabular}
-
-\smallskip
-\footnotesize\textsuperscript{a}Pending: to be filled from a repeated
-measurement (the first run used reversed fall-slew thresholds).
-\end{table}
-
-The worst-case propagation delay is \SI{65.4}{ps} and the output rise slew is
-uniform at about \SI{20.6}{ps} across all bits, consistent with every output
-being driven by an identical \texttt{INV\_4} into an identical load.
-$Y_4$--$Y_7$ toggle only 4--5 times under the present stimulus, so their
-statistics rest on fewer edges than $Y_0$--$Y_3$.
-
-\subsection{Power and energy}
+\subsection{Results}
 
 \begin{table}[H]
 \centering
-\caption{Power and energy drawn from VDD, schematic (pre-layout).}
-\label{tab:power}
-\begin{tabular}{l S[table-format=3.4] l}
+\caption{Measured metrics, schematic (pre-layout), over all outputs and all
+2048 vectors. Spectre is the reference; UltraSim is a fast-SPICE cross-check.}
+\label{tab:results}
+\begin{tabular}{l S[table-format=3.2] S[table-format=3.2] l}
 \toprule
-Metric & {Value} & Unit \\
+Metric & {Spectre} & {UltraSim} & Unit \\
 \midrule
-Average power (\SI{10}{\micro s} window) & 0.2567 & \si{\micro W} \\
-Peak power                               & 620.1380 & \si{\micro W} \\
-Total energy                             & 2.5665 & \si{pJ} \\
-Energy per output transition (57 edges)  & 45.03 & \si{fJ} \\
+Rise slew, max                    & 20.63  & 24.39  & ps \\
+Fall slew, max                    & 50.31  & 43.80  & ps \\
+Delay $t_{pd}$, max               & 74.73  & 72.12  & ps \\
+Delay $t_{pd}$, average           & 69.97  & 66.52  & ps \\
+Output transitions measured       & {1003} & {1003} & \\
+\midrule
+Average power (\SI{10}{\micro s}) & 1.124  & 1.029  & \si{\micro W} \\
+Peak power                        & 706.37 & 667.43 & \si{\micro W} \\
+Total energy                      & 11.24  & 10.29  & pJ \\
+Energy per output transition      & 11.20  & 10.26  & fJ \\
+Energy per vector                 & 5.49   & 5.03   & fJ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The average power is low because the circuit switches only during the short
-input transitions of the \SI{10}{\micro s} window; the energy per output
-transition (\SI{45}{fJ}) is the more meaningful figure and includes the
-internal multiplexer and inverter nodes that switch with each output edge.
+The worst-case propagation delay is \SI{74.7}{ps} with an average of
+\SI{70.0}{ps}. Output falling edges are slower than rising edges
+(\SI{50.3}{ps} versus \SI{20.6}{ps} worst-case slew), which suggests the
+output inverter's pull-down is the weaker side for this load. UltraSim agrees with
+Spectre to within about 20\,\% on slew and 5\,\% on delay, as expected for a
+fast-SPICE engine.
+
+The average power is quoted over the full \SI{10}{\micro s} window, of which
+the vector sweep occupies the first \SI{4.1}{\micro s}; the energy per output
+transition (\SI{11.2}{fJ}) and per vector (\SI{5.5}{fJ}) are the more useful
+figures, since they do not depend on the window length.
 
 %--------------------------------------------------------------------------
 \section{Pre- versus post-layout}
-Parasitics are extracted with Calibre xRC (R\,+\,C\,+\,coupling C); the
-extracted cell replaces the schematic in the same testbench and the same
-measurements are repeated.
+Parasitics are extracted with Calibre (R\,+\,C\,+\,coupling C) into the
+\texttt{calibre} view; the extracted cell replaces the schematic in the same
+testbench and the same measurements are repeated.
 
 \begin{table}[H]
 \centering
-\caption{Schematic versus extracted layout (worst case over all outputs).}
+\caption{Schematic versus extracted layout (Spectre, all outputs).}
 \label{tab:prepost}
 \begin{tabular}{l S[table-format=3.2] c c}
 \toprule
 Metric & {Schematic} & Post-layout & Change \\
 \midrule
-Rise slew, max (ps)          & 20.65  & \pex & \pex \\
-Fall slew, max (ps)          & {\textemdash} & \pex & \pex \\
-Delay $t_{pd}$, max (ps)     & 65.36  & \pex & \pex \\
-Delay $t_{pd}$, avg (ps)     & 52.49  & \pex & \pex \\
-Average power (\si{\micro W}) & 0.2567 & \pex & \pex \\
-Peak power (\si{\micro W})    & 620.14 & \pex & \pex \\
-Energy per transition (fJ)   & 45.03  & \pex & \pex \\
+Rise slew, max (ps)            & 20.63  & \pex & \pex \\
+Fall slew, max (ps)            & 50.31  & \pex & \pex \\
+Delay $t_{pd}$, max (ps)       & 74.73  & \pex & \pex \\
+Delay $t_{pd}$, avg (ps)       & 69.97  & \pex & \pex \\
+Peak power (\si{\micro W})     & 706.37 & \pex & \pex \\
+Energy per transition (fJ)     & 11.20  & \pex & \pex \\
+Function (2048 vectors)        & {pass} & \pex & \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 %--------------------------------------------------------------------------
 \section{Conclusion}
-The 8-bit logarithmic shifter was implemented with transmission-gate
-multiplexers and progressively sized restoring inverters. Its layout is
-LVS-clean, and pre-layout simulation at \SI{1.0}{V}, TT, \SI{27}{\celsius}
-gives a worst-case delay of \SI{65.4}{ps}, an output rise slew of
-\SI{20.7}{ps} and about \SI{45}{fJ} per output transition into a
-fanout-of-4 style load. Post-layout figures will quantify the cost of the
-extracted wiring parasitics.
+The 8-bit logarithmic right shifter was implemented with transmission-gate
+multiplexers and progressively sized restoring inverters. The layout is DRC-
+and LVS-clean, and all 2048 input/shift combinations produce the correct
+output in transistor-level simulation. At \SI{1.0}{V}, TT, \SI{27}{\celsius}
+with a fanout-of-4 load, the worst-case delay is \SI{74.7}{ps}, the worst-case
+output slew is \SI{20.6}{ps} rising and \SI{50.3}{ps} falling, and the shifter
+draws about \SI{11.2}{fJ} per output transition. Post-layout figures will
+quantify the cost of the extracted wiring parasitics.
 
 \end{document}
