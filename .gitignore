@@ -23,3 +23,6 @@ report/*.fdb_latexmk
 report/*.out
 report/*.synctex.gz
 .DS_Store
+
+# Virtuoso OA cache files
+*.oacache
