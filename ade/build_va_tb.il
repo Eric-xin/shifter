@@ -75,7 +75,8 @@ let((aPins sPins snPins yPins cv stim dut chk vsrc gnd load yv yg yl)
   cv = dbOpenCellViewByType(shvaLib shvaTb "schematic" "schematic" "w")
 
   ;; (y offsets as variables: SKILL reads "list(0 -8)" as 0 minus 8)
-  yv = -8.0  yg = -11.0
+  yv = -8.0
+  yg = -11.0
   stim = shvaPlace(cv shvaLib "shifter_stim"  "ISTIM"  list(0.0 0.0))
   dut  = shvaPlace(cv shvaLib shvaDut         "IDUT"   list(8.0 0.0))
   chk  = shvaPlace(cv shvaLib "shifter_check" "ICHECK" list(16.0 0.0))
