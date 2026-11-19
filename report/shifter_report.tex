@@ -13,7 +13,7 @@
 % Post-layout (Calibre xRC) values: fill in from sim/shifter_metrics_pex.csv
 \newcommand{\pex}{\textemdash}
 
-\title{8-bit Logarithmic Shifter in TSMC 65\,nm:\\Design, Verification and Characterization}
+\title{Shifter}
 \author{}
 \date{November 18, 2026}
 
@@ -113,13 +113,6 @@ alternating VDD/VSS rails, multiplexer/inverter stages in columns.}
 \label{fig:lvs}
 \end{figure}
 
-\subsection{Logic reference model}
-A self-checking Verilog testbench (\texttt{verilog/tb\_Shifter\_8bit\_sized.v})
-applies all $2^8 \times 2^3 = 2048$ input/shift combinations and compares the
-outputs with a golden shift function. Run against the behavioral model it
-passes 2048/2048 vectors; the same testbench can be bound to the netlisted
-schematic in a mixed-signal simulator to check the transistor-level circuit.
-
 \begin{table}[H]
 \centering
 \caption{Verification summary.}
@@ -129,7 +122,6 @@ schematic in a mixed-signal simulator to check the transistor-level circuit.
 Check & Tool & Result \\
 \midrule
 LVS (layout vs.\ schematic)      & Calibre nmLVS v2025.1   & CORRECT \\
-Logic reference (2048 vectors)   & Icarus Verilog 13.0     & 2048/2048 pass (behavioral model) \\
 Transient simulation             & Spectre 23.1 (APS)      & completed, 0 errors \\
 \bottomrule
 \end{tabular}
