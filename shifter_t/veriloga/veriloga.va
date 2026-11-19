@@ -1,0 +1,301 @@
+// VerilogA for Shifter, shifter_t, veriloga
+
+`include "constants.vams"
+`include "disciplines.vams"
+
+module shifter_t(A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_N, Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7, VDDS, VDDD, ERR);
+
+  output A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_N;
+  input  Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7;
+  inout  VDDS, VDDD;
+  output ERR;
+  electrical A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_N, Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7, VDDS, VDDD, ERR;
+
+  // stimulus
+  parameter real    vdd      = 1.0  from (0:inf);    // logic high level (V)
+  parameter real    period   = 2n   from (0:inf);    // time per vector (s)
+  parameter real    tdelay   = 2n   from [0:inf);    // first vector change (s)
+  parameter real    tr       = 25p  from (0:inf);    // input rise/fall time (s)
+  parameter integer nvec     = 2048 from [1:2048];
+  // check
+  parameter real    tsample  = 0.9  from (0:1);      // sample point, fraction of period
+  parameter integer dir      = 0    from [0:1];      // 0: Y[i]=A[i+S]  1: Y[i]=A[i-S]
+  parameter integer rotate   = 0    from [0:1];
+  parameter integer fill     = 0    from [0:1];
+  parameter integer maxprint = 20   from [0:inf);
+  // metrics
+  parameter real    lo       = 0.1  from (0:0.5);    // slew thresholds (fraction of vdd)
+  parameter real    hi       = 0.9  from (0.5:1);
+  parameter real    ttol     = 0.1p from (0:inf);    // crossing time resolution (s)
+  parameter real    tstart   = 0    from [0:inf);    // ignore activity before this (s)
+  parameter string  file      = "shifter_metrics.csv";
+  parameter string  checkfile = "shifter_check.log";
+
+  integer k, code, prev, yout, yexp, p, j, nerr, nchk, fdc, fd, nr, nf, nd;
+  integer rn[0:7], fn[0:7], dn[0:7];
+  real tin, idd, pw, en, en0, pmax, d, ar, af, ad, mr, mf, md;
+  real tlr[0:7], thf[0:7];
+  real rsum[0:7], rmax[0:7], fsum[0:7], fmax[0:7], dsum[0:7], dmax[0:7];
+
+  analog begin
+    @(initial_step) begin
+      k = 0;  code = 0;  nerr = 0;  nchk = 0;
+      tin = -1;  pmax = 0;  en0 = 0;
+      for (j = 0; j < 8; j = j + 1) begin
+        tlr[j] = -1;  thf[j] = -1;
+        rsum[j] = 0;  rmax[j] = 0;  rn[j] = 0;
+        fsum[j] = 0;  fmax[j] = 0;  fn[j] = 0;
+        dsum[j] = 0;  dmax[j] = 0;  dn[j] = 0;
+      end
+      fdc = $fopen(checkfile, "w");
+    end
+
+    // ---- stimulus
+    @(timer(tdelay, period)) begin
+      prev = code;
+      if (k < nvec) code = k;
+      k = k + 1;
+      if (code != prev && $abstime >= tstart) tin = $abstime + tr/2;   // 50 % point
+    end
+
+    V(A0)   <+ transition(vdd * ((code /    1) % 2), 0, tr);
+    V(A1)   <+ transition(vdd * ((code /    2) % 2), 0, tr);
+    V(A2)   <+ transition(vdd * ((code /    4) % 2), 0, tr);
+    V(A3)   <+ transition(vdd * ((code /    8) % 2), 0, tr);
+    V(A4)   <+ transition(vdd * ((code /   16) % 2), 0, tr);
+    V(A5)   <+ transition(vdd * ((code /   32) % 2), 0, tr);
+    V(A6)   <+ transition(vdd * ((code /   64) % 2), 0, tr);
+    V(A7)   <+ transition(vdd * ((code /  128) % 2), 0, tr);
+    V(S0)   <+ transition(vdd * ((code /  256) % 2), 0, tr);
+    V(S1)   <+ transition(vdd * ((code /  512) % 2), 0, tr);
+    V(S2)   <+ transition(vdd * ((code / 1024) % 2), 0, tr);
+    V(S0_N) <+ transition(vdd * (1 - (code /  256) % 2), 0, tr);
+    V(S1_N) <+ transition(vdd * (1 - (code /  512) % 2), 0, tr);
+    V(S2_N) <+ transition(vdd * (1 - (code / 1024) % 2), 0, tr);
+
+    // ---- check
+    yout = (V(Y0) > vdd/2) + 2*(V(Y1) > vdd/2) + 4*(V(Y2) > vdd/2) + 8*(V(Y3) > vdd/2)
+         + 16*(V(Y4) > vdd/2) + 32*(V(Y5) > vdd/2) + 64*(V(Y6) > vdd/2) + 128*(V(Y7) > vdd/2);
+
+    @(timer(tdelay + tsample*period, period)) begin
+      if (nchk < nvec) begin
+        p = 1;                                         // p = 2^S
+        for (j = 0; j < code / 256; j = j + 1) p = p * 2;
+        if (dir == 0) begin
+          yexp = (code % 256) / p;
+          if (rotate)    yexp = yexp + ((code % 256) * (256 / p)) % 256;
+          else if (fill) yexp = yexp + 256 - 256 / p;
+        end else begin
+          yexp = ((code % 256) * p) % 256;
+          if (rotate)    yexp = yexp + (code % 256) / (256 / p);
+          else if (fill) yexp = yexp + p - 1;
+        end
+        nchk = nchk + 1;
+        if (yout != yexp) begin
+          nerr = nerr + 1;
+          if (nerr <= maxprint)
+            $strobe("shifter_meter FAIL t=%g  A=%d S=%d  Y=%d  expected %d",
+                    $abstime, code % 256, code / 256, yout, yexp);
+          $fstrobe(fdc, "FAIL t=%g A=%d S=%d Y=%d expected=%d",
+                   $abstime, code % 256, code / 256, yout, yexp);
+        end
+      end
+    end
+    V(ERR) <+ transition(nerr, 0, 1p);
+
+    // ---- supply: 0 V ammeter between supply and DUT
+    V(VDDS, VDDD) <+ 0;
+    idd = I(VDDS, VDDD);
+    pw  = V(VDDD) * idd;
+    en  = idt(pw, 0);
+    @(timer(tstart)) en0 = en;
+    if ($abstime >= tstart && pw > pmax) pmax = pw;
+
+    // ---- Y0
+    @(cross(V(Y0) - lo*vdd, +1, ttol)) begin tlr[0] = $abstime; thf[0] = -1; end
+    @(cross(V(Y0) - hi*vdd, +1, ttol)) if (tlr[0] >= tstart) begin
+      d = $abstime - tlr[0];  rsum[0] = rsum[0] + d;  rn[0] = rn[0] + 1;
+      if (d > rmax[0]) rmax[0] = d;
+      tlr[0] = -1;
+    end
+    @(cross(V(Y0) - hi*vdd, -1, ttol)) begin thf[0] = $abstime; tlr[0] = -1; end
+    @(cross(V(Y0) - lo*vdd, -1, ttol)) if (thf[0] >= tstart) begin
+      d = $abstime - thf[0];  fsum[0] = fsum[0] + d;  fn[0] = fn[0] + 1;
+      if (d > fmax[0]) fmax[0] = d;
+      thf[0] = -1;
+    end
+    @(cross(V(Y0) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[0] = dsum[0] + d;  dn[0] = dn[0] + 1;
+      if (d > dmax[0]) dmax[0] = d;
+    end
+
+    // ---- Y1
+    @(cross(V(Y1) - lo*vdd, +1, ttol)) begin tlr[1] = $abstime; thf[1] = -1; end
+    @(cross(V(Y1) - hi*vdd, +1, ttol)) if (tlr[1] >= tstart) begin
+      d = $abstime - tlr[1];  rsum[1] = rsum[1] + d;  rn[1] = rn[1] + 1;
+      if (d > rmax[1]) rmax[1] = d;
+      tlr[1] = -1;
+    end
+    @(cross(V(Y1) - hi*vdd, -1, ttol)) begin thf[1] = $abstime; tlr[1] = -1; end
+    @(cross(V(Y1) - lo*vdd, -1, ttol)) if (thf[1] >= tstart) begin
+      d = $abstime - thf[1];  fsum[1] = fsum[1] + d;  fn[1] = fn[1] + 1;
+      if (d > fmax[1]) fmax[1] = d;
+      thf[1] = -1;
+    end
+    @(cross(V(Y1) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[1] = dsum[1] + d;  dn[1] = dn[1] + 1;
+      if (d > dmax[1]) dmax[1] = d;
+    end
+
+    // ---- Y2
+    @(cross(V(Y2) - lo*vdd, +1, ttol)) begin tlr[2] = $abstime; thf[2] = -1; end
+    @(cross(V(Y2) - hi*vdd, +1, ttol)) if (tlr[2] >= tstart) begin
+      d = $abstime - tlr[2];  rsum[2] = rsum[2] + d;  rn[2] = rn[2] + 1;
+      if (d > rmax[2]) rmax[2] = d;
+      tlr[2] = -1;
+    end
+    @(cross(V(Y2) - hi*vdd, -1, ttol)) begin thf[2] = $abstime; tlr[2] = -1; end
+    @(cross(V(Y2) - lo*vdd, -1, ttol)) if (thf[2] >= tstart) begin
+      d = $abstime - thf[2];  fsum[2] = fsum[2] + d;  fn[2] = fn[2] + 1;
+      if (d > fmax[2]) fmax[2] = d;
+      thf[2] = -1;
+    end
+    @(cross(V(Y2) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[2] = dsum[2] + d;  dn[2] = dn[2] + 1;
+      if (d > dmax[2]) dmax[2] = d;
+    end
+
+    // ---- Y3
+    @(cross(V(Y3) - lo*vdd, +1, ttol)) begin tlr[3] = $abstime; thf[3] = -1; end
+    @(cross(V(Y3) - hi*vdd, +1, ttol)) if (tlr[3] >= tstart) begin
+      d = $abstime - tlr[3];  rsum[3] = rsum[3] + d;  rn[3] = rn[3] + 1;
+      if (d > rmax[3]) rmax[3] = d;
+      tlr[3] = -1;
+    end
+    @(cross(V(Y3) - hi*vdd, -1, ttol)) begin thf[3] = $abstime; tlr[3] = -1; end
+    @(cross(V(Y3) - lo*vdd, -1, ttol)) if (thf[3] >= tstart) begin
+      d = $abstime - thf[3];  fsum[3] = fsum[3] + d;  fn[3] = fn[3] + 1;
+      if (d > fmax[3]) fmax[3] = d;
+      thf[3] = -1;
+    end
+    @(cross(V(Y3) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[3] = dsum[3] + d;  dn[3] = dn[3] + 1;
+      if (d > dmax[3]) dmax[3] = d;
+    end
+
+    // ---- Y4
+    @(cross(V(Y4) - lo*vdd, +1, ttol)) begin tlr[4] = $abstime; thf[4] = -1; end
+    @(cross(V(Y4) - hi*vdd, +1, ttol)) if (tlr[4] >= tstart) begin
+      d = $abstime - tlr[4];  rsum[4] = rsum[4] + d;  rn[4] = rn[4] + 1;
+      if (d > rmax[4]) rmax[4] = d;
+      tlr[4] = -1;
+    end
+    @(cross(V(Y4) - hi*vdd, -1, ttol)) begin thf[4] = $abstime; tlr[4] = -1; end
+    @(cross(V(Y4) - lo*vdd, -1, ttol)) if (thf[4] >= tstart) begin
+      d = $abstime - thf[4];  fsum[4] = fsum[4] + d;  fn[4] = fn[4] + 1;
+      if (d > fmax[4]) fmax[4] = d;
+      thf[4] = -1;
+    end
+    @(cross(V(Y4) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[4] = dsum[4] + d;  dn[4] = dn[4] + 1;
+      if (d > dmax[4]) dmax[4] = d;
+    end
+
+    // ---- Y5
+    @(cross(V(Y5) - lo*vdd, +1, ttol)) begin tlr[5] = $abstime; thf[5] = -1; end
+    @(cross(V(Y5) - hi*vdd, +1, ttol)) if (tlr[5] >= tstart) begin
+      d = $abstime - tlr[5];  rsum[5] = rsum[5] + d;  rn[5] = rn[5] + 1;
+      if (d > rmax[5]) rmax[5] = d;
+      tlr[5] = -1;
+    end
+    @(cross(V(Y5) - hi*vdd, -1, ttol)) begin thf[5] = $abstime; tlr[5] = -1; end
+    @(cross(V(Y5) - lo*vdd, -1, ttol)) if (thf[5] >= tstart) begin
+      d = $abstime - thf[5];  fsum[5] = fsum[5] + d;  fn[5] = fn[5] + 1;
+      if (d > fmax[5]) fmax[5] = d;
+      thf[5] = -1;
+    end
+    @(cross(V(Y5) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[5] = dsum[5] + d;  dn[5] = dn[5] + 1;
+      if (d > dmax[5]) dmax[5] = d;
+    end
+
+    // ---- Y6
+    @(cross(V(Y6) - lo*vdd, +1, ttol)) begin tlr[6] = $abstime; thf[6] = -1; end
+    @(cross(V(Y6) - hi*vdd, +1, ttol)) if (tlr[6] >= tstart) begin
+      d = $abstime - tlr[6];  rsum[6] = rsum[6] + d;  rn[6] = rn[6] + 1;
+      if (d > rmax[6]) rmax[6] = d;
+      tlr[6] = -1;
+    end
+    @(cross(V(Y6) - hi*vdd, -1, ttol)) begin thf[6] = $abstime; tlr[6] = -1; end
+    @(cross(V(Y6) - lo*vdd, -1, ttol)) if (thf[6] >= tstart) begin
+      d = $abstime - thf[6];  fsum[6] = fsum[6] + d;  fn[6] = fn[6] + 1;
+      if (d > fmax[6]) fmax[6] = d;
+      thf[6] = -1;
+    end
+    @(cross(V(Y6) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[6] = dsum[6] + d;  dn[6] = dn[6] + 1;
+      if (d > dmax[6]) dmax[6] = d;
+    end
+
+    // ---- Y7
+    @(cross(V(Y7) - lo*vdd, +1, ttol)) begin tlr[7] = $abstime; thf[7] = -1; end
+    @(cross(V(Y7) - hi*vdd, +1, ttol)) if (tlr[7] >= tstart) begin
+      d = $abstime - tlr[7];  rsum[7] = rsum[7] + d;  rn[7] = rn[7] + 1;
+      if (d > rmax[7]) rmax[7] = d;
+      tlr[7] = -1;
+    end
+    @(cross(V(Y7) - hi*vdd, -1, ttol)) begin thf[7] = $abstime; tlr[7] = -1; end
+    @(cross(V(Y7) - lo*vdd, -1, ttol)) if (thf[7] >= tstart) begin
+      d = $abstime - thf[7];  fsum[7] = fsum[7] + d;  fn[7] = fn[7] + 1;
+      if (d > fmax[7]) fmax[7] = d;
+      thf[7] = -1;
+    end
+    @(cross(V(Y7) - vdd/2, 0, ttol)) if (tin >= 0 && $abstime > tin) begin
+      d = $abstime - tin;  dsum[7] = dsum[7] + d;  dn[7] = dn[7] + 1;
+      if (d > dmax[7]) dmax[7] = d;
+    end
+
+    // ---- report
+    @(final_step) begin
+      if (nchk < nvec)
+        $strobe("shifter_meter: only %d of %d vectors checked -- set tran stop >= %g",
+                nchk, nvec, tdelay + nvec*period);
+      if (nerr == 0)
+        $strobe("shifter_meter: PASS  %d/%d vectors", nchk, nchk);
+      else
+        $strobe("shifter_meter: FAIL  %d of %d vectors wrong (see %s)", nerr, nchk, checkfile);
+      $fstrobe(fdc, "checked=%d errors=%d", nchk, nerr);
+      $fclose(fdc);
+
+      fd = $fopen(file, "w");
+      $fstrobe(fd, "net,rise_max_ps,rise_avg_ps,fall_max_ps,fall_avg_ps,tpd_max_ps,tpd_avg_ps,edges");
+      nr = 0;  nf = 0;  nd = 0;  ar = 0;  af = 0;  ad = 0;  mr = 0;  mf = 0;  md = 0;
+      for (j = 0; j < 8; j = j + 1) begin
+        $fstrobe(fd, "Y%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d", j,
+                 rmax[j]*1e12, (rn[j] > 0) ? rsum[j]/rn[j]*1e12 : 0,
+                 fmax[j]*1e12, (fn[j] > 0) ? fsum[j]/fn[j]*1e12 : 0,
+                 dmax[j]*1e12, (dn[j] > 0) ? dsum[j]/dn[j]*1e12 : 0, dn[j]);
+        nr = nr + rn[j];  ar = ar + rsum[j];  if (rmax[j] > mr) mr = rmax[j];
+        nf = nf + fn[j];  af = af + fsum[j];  if (fmax[j] > mf) mf = fmax[j];
+        nd = nd + dn[j];  ad = ad + dsum[j];  if (dmax[j] > md) md = dmax[j];
+      end
+      $fstrobe(fd, "ALL,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d",
+               mr*1e12, (nr > 0) ? ar/nr*1e12 : 0, mf*1e12, (nf > 0) ? af/nf*1e12 : 0,
+               md*1e12, (nd > 0) ? ad/nd*1e12 : 0, nd);
+      $fstrobe(fd, "");
+      $fstrobe(fd, "metric,value");
+      $fstrobe(fd, "vdd_V,%.4f", vdd);
+      $fstrobe(fd, "power_avg_uW,%.4f", (en - en0) / ($abstime - tstart) * 1e6);
+      $fstrobe(fd, "power_peak_uW,%.4f", pmax * 1e6);
+      $fstrobe(fd, "energy_pJ,%.4f", (en - en0) * 1e12);
+      $fstrobe(fd, "energy_per_edge_fJ,%.4f", (nd > 0) ? (en - en0) / nd * 1e15 : 0);
+      $fstrobe(fd, "vectors_checked,%d", nchk);
+      $fstrobe(fd, "vectors_failed,%d", nerr);
+      $fclose(fd);
+      $strobe("shifter_meter: rise max %.2f ps  fall max %.2f ps  tpd max %.2f ps avg %.2f ps (%d edges)",
+              mr*1e12, mf*1e12, md*1e12, (nd > 0) ? ad/nd*1e12 : 0, nd);
+      $strobe("shifter_meter: P avg %.4f uW  peak %.2f uW  E %.4f pJ  -> %s",
+              (en - en0) / ($abstime - tstart) * 1e6, pmax*1e6, (en - en0)*1e12, file);
+    end
+  end
+endmodule

@@ -1,0 +1,9 @@
+// VerilogA for Shifter, shifter_t, veriloga
+
+`include "constants.vams"
+`include "disciplines.vams"
+
+module shifter_t;
+
+
+endmodule

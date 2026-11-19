@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <setupdb version="7">maestro
 	<active>Active Setup
-		<jobcontrolmode>LSCS</jobcontrolmode>
+		<jobcontrolmode>ICRP</jobcontrolmode>
 		<corners>
 			<corner enabled="1">_default</corner>
 		</corners>
@@ -20,7 +20,7 @@
 						<value>$AXL_SETUPDB_DIR</value>
 					</option>
 					<option>sim
-						<value>spectre</value>
+						<value>UltraSim</value>
 					</option>
 					<option>view
 						<value>schematic</value>
