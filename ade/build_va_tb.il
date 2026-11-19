@@ -1,15 +1,16 @@
-;; build_va_tb.il -- build an ADE testbench around the Verilog-A stimulus/checker
+;; build_va_tb.il -- build an ADE testbench around the Verilog-A shifter_meter
 ;;
 ;; Creates schematic  Shifter/Shifter_8bit_sized_va_tb/schematic  with
-;;   shifter_stim  -> Shifter_8bit_sized -> shifter_check
-;;   shifter_meter (slew / delay / power) watching the same nets and sitting
-;;   between the supply (VDD) and the DUT's VDD pin (VDD_DUT)
-;;   VDD source, ground, and an INV_150n x4 load on every output (as in the
-;;   original TB). Every connection is a short wire stub with a net label.
+;;   shifter_meter (Verilog-A) driving A0-A7/S0-S2/S0_N-S2_N, checking Y0-Y7,
+;;     measuring slew/delay/power, in series with the DUT supply:
+;;     VDD -> meter VDDS ... meter VDDD -> VDD_DUT -> DUT VDD
+;;   Shifter_8bit_sized (VSS to ground), a 1 V vdc from VDD to ground, and an
+;;   INV_150n x4 load on every output (as in the original TB).
+;; Every connection is a short wire stub with a net label.
 ;;
-;; Before loading: open the shifter_stim, shifter_check and shifter_meter veriloga views once
-;; in Virtuoso and save them (lets Virtuoso parse the modules and offer to
-;; create their symbols). Missing symbols are created here as a fallback.
+;; Before loading: open shifter_meter/veriloga once in Virtuoso and save it
+;; (Virtuoso parses the module and offers to create/update its symbol).
+;; A missing symbol is created here as a fallback.
 ;;
 ;; Usage (CIW):  load("Shifter/ade/build_va_tb.il")
 ;; Then: open the TB, Launch > ADE Explorer, see ade/README.md for the setup.
@@ -63,15 +64,14 @@ procedure(shvaStubAll(cv inst nets)   ; nets: list of terminal names = net names
   foreach(n nets shvaStub(cv inst n n)))
 
 ;; ---------------------------------------------------------------- build
-let((aPins sPins snPins yPins cv stim dut chk mtr vsrc gnd load yv yg ym yl)
+let((aPins sPins snPins yPins cv dut mtr vsrc gnd load yv yg yl)
   aPins  = shvaPins("A" 8)
   sPins  = shvaPins("S" 3)
   snPins = list("S0_N" "S1_N" "S2_N")
   yPins  = shvaPins("Y" 8)
 
-  shvaEnsureSymbol("shifter_stim"  nil append(aPins append(sPins snPins)))
-  shvaEnsureSymbol("shifter_check" append(aPins append(sPins yPins)) list("ERR"))
-  shvaEnsureSymbol("shifter_meter" append(aPins append(sPins append(yPins list("VDDS")))) list("VDDD"))
+  shvaEnsureSymbol("shifter_meter" append(yPins list("VDDS"))
+                   append(aPins append(sPins append(snPins list("ERR" "VDDD")))))
 
   when(ddGetObj(shvaLib shvaTb "schematic") && !shvaOverwrite
     error("%s/%s/schematic exists -- set shvaOverwrite = t to replace it\n" shvaLib shvaTb))
@@ -80,22 +80,17 @@ let((aPins sPins snPins yPins cv stim dut chk mtr vsrc gnd load yv yg ym yl)
   ;; (y offsets as variables: SKILL reads "list(0 -8)" as 0 minus 8)
   yv = -8.0
   yg = -11.0
-  ym = -9.0
-  stim = shvaPlace(cv shvaLib "shifter_stim"  "ISTIM"  list(0.0 0.0))
-  dut  = shvaPlace(cv shvaLib shvaDut         "IDUT"   list(8.0 0.0))
-  chk  = shvaPlace(cv shvaLib "shifter_check" "ICHECK" list(16.0 0.0))
-  mtr  = shvaPlace(cv shvaLib "shifter_meter" "IMETER" list(8.0 ym))
+  mtr  = shvaPlace(cv shvaLib "shifter_meter" "IMETER" list(0.0 0.0))
+  dut  = shvaPlace(cv shvaLib shvaDut         "IDUT"   list(10.0 0.0))
   vsrc = shvaPlace(cv "analogLib" "vdc" "VSUP" list(0.0 yv))
   gnd  = shvaPlace(cv "analogLib" "gnd" "IGND" list(0.0 yg))
   dbReplaceProp(vsrc "vdc" "string" shvaVdd)
 
-  shvaStubAll(cv stim append(aPins append(sPins snPins)))
+  shvaStubAll(cv mtr  append(aPins append(sPins append(snPins append(yPins list("ERR"))))))
+  shvaStub(cv mtr "VDDS" "VDD")                          ; supply side of the ammeter
+  shvaStub(cv mtr "VDDD" "VDD_DUT")                      ; DUT side
   shvaStubAll(cv dut  append(aPins append(sPins append(snPins append(yPins list("VSS"))))))
-  shvaStub(cv dut "VDD" "VDD_DUT")                       ; DUT supply through the meter
-  shvaStubAll(cv mtr  append(aPins append(sPins yPins)))
-  shvaStub(cv mtr "VDDS" "VDD")
-  shvaStub(cv mtr "VDDD" "VDD_DUT")
-  shvaStubAll(cv chk  append(aPins append(sPins append(yPins list("ERR")))))
+  shvaStub(cv dut "VDD" "VDD_DUT")
   shvaStub(cv vsrc "PLUS"  "VDD")
   shvaStub(cv vsrc "MINUS" "VSS")
   shvaStub(cv gnd  "gnd!"  "VSS")
@@ -103,7 +98,7 @@ let((aPins sPins snPins yPins cv stim dut chk mtr vsrc gnd load yv yg ym yl)
   ;; Output loads: 4 parallel INV_150n per output (iterated instance).
   foreach(i '(0 1 2 3 4 5 6 7)
     yl = -3.0 * i
-    load = shvaPlace(cv shvaLib "INV_150n" sprintf(nil "ILOAD%d<1:4>" i) list(24.0 yl))
+    load = shvaPlace(cv shvaLib "INV_150n" sprintf(nil "ILOAD%d<1:4>" i) list(20.0 yl))
     shvaStub(cv load "VIN"  sprintf(nil "Y%d" i))
     shvaStub(cv load "VOUT" sprintf(nil "YL%d" i))
     shvaStub(cv load "VDD"  "VDD")
