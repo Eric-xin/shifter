@@ -20,7 +20,7 @@
 						<value>$AXL_SETUPDB_DIR</value>
 					</option>
 					<option>sim
-						<value>UltraSim</value>
+						<value>spectre</value>
 					</option>
 					<option>view
 						<value>schematic</value>
