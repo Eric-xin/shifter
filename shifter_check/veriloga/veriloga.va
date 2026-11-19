@@ -1,0 +1,93 @@
+// shifter_check -- self-checking monitor for Shifter_8bit_sized
+//
+// Senses A, S and Y (threshold vdd/2) late in every vector period, computes
+// the expected Y from the sensed A and S, and counts mismatches.
+//   ERR output   : voltage = number of failing vectors (0 V = all pass)
+//   spectre log  : PASS/FAIL summary, first maxprint failures
+//   logfile      : every failure, in the simulation run directory
+// Timing defaults match shifter_stim (sample at tdelay + (k + tsample)*period).
+//
+// Expected function (set to match the design):
+//   dir    0 = shift toward Y0 (Y[i] = A[i+S]),  1 = toward Y7 (Y[i] = A[i-S])
+//   rotate 1 = rotate instead of shift
+//   fill   value shifted into vacated bits (ignored when rotating)
+
+`include "constants.vams"
+`include "disciplines.vams"
+
+module shifter_check(A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2,
+                     Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7, ERR);
+  input  A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2;
+  input  Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7;
+  output ERR;
+  electrical A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2;
+  electrical Y0, Y1, Y2, Y3, Y4, Y5, Y6, Y7, ERR;
+
+  parameter real    vdd      = 1.0  from (0:inf);
+  parameter real    period   = 2n   from (0:inf);
+  parameter real    tdelay   = 2n   from [0:inf);
+  parameter real    tsample  = 0.9  from (0:1);    // sample point, fraction of period
+  parameter integer nvec     = 2048 from [1:2048];
+  parameter integer dir      = 0    from [0:1];
+  parameter integer rotate   = 0    from [0:1];
+  parameter integer fill     = 0    from [0:1];
+  parameter integer maxprint = 20   from [0:inf);
+
+  integer ain, sel, yout, yexp, p, j, nerr, nchk, fd;
+  real vth;
+
+  analog begin
+    @(initial_step) begin
+      nerr = 0;
+      nchk = 0;
+      fd = $fopen("shifter_check.log", "w");
+    end
+
+    vth  = vdd / 2;
+    ain  = (V(A0) > vth) + 2*(V(A1) > vth) + 4*(V(A2) > vth) + 8*(V(A3) > vth)
+         + 16*(V(A4) > vth) + 32*(V(A5) > vth) + 64*(V(A6) > vth) + 128*(V(A7) > vth);
+    sel  = (V(S0) > vth) + 2*(V(S1) > vth) + 4*(V(S2) > vth);
+    yout = (V(Y0) > vth) + 2*(V(Y1) > vth) + 4*(V(Y2) > vth) + 8*(V(Y3) > vth)
+         + 16*(V(Y4) > vth) + 32*(V(Y5) > vth) + 64*(V(Y6) > vth) + 128*(V(Y7) > vth);
+
+    @(timer(tdelay + tsample*period, period)) begin
+      if (nchk < nvec) begin
+        p = 1;                                   // p = 2^sel
+        for (j = 0; j < sel; j = j + 1) p = p * 2;
+        if (dir == 0) begin
+          yexp = ain / p;                        // A >> S
+          if (rotate)    yexp = yexp + (ain * (256 / p)) % 256;
+          else if (fill) yexp = yexp + 256 - 256 / p;
+        end else begin
+          yexp = (ain * p) % 256;                // A << S
+          if (rotate)    yexp = yexp + ain / (256 / p);
+          else if (fill) yexp = yexp + p - 1;
+        end
+        nchk = nchk + 1;
+        if (yout != yexp) begin
+          nerr = nerr + 1;
+          if (nerr <= maxprint)
+            $strobe("shifter_check FAIL t=%g  A=%d S=%d  Y=%d  expected %d",
+                    $abstime, ain, sel, yout, yexp);
+          $fstrobe(fd, "FAIL t=%g A=%d S=%d Y=%d expected=%d",
+                   $abstime, ain, sel, yout, yexp);
+        end
+      end
+    end
+
+    V(ERR) <+ transition(nerr, 0, 1p);
+
+    @(final_step) begin
+      if (nchk < nvec)
+        $strobe("shifter_check: only %d of %d vectors checked -- set tran stop >= %g",
+                nchk, nvec, tdelay + nvec*period);
+      if (nerr == 0)
+        $strobe("shifter_check: PASS  %d/%d vectors", nchk, nchk);
+      else
+        $strobe("shifter_check: FAIL  %d of %d vectors wrong (see shifter_check.log)",
+                nerr, nchk);
+      $fstrobe(fd, "checked=%d errors=%d", nchk, nerr);
+      $fclose(fd);
+    end
+  end
+endmodule

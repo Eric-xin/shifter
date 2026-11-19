@@ -1,0 +1,49 @@
+// shifter_stim -- exhaustive stimulus for Shifter_8bit_sized
+//
+// Steps through all 2048 combinations code = 256*S + A (A changes fastest).
+// Vector k is applied from tdelay + k*period to tdelay + (k+1)*period
+// (vector 0 also before tdelay); the last vector is held after the sweep.
+// Transient stop time >= tdelay + nvec*period (default 2n + 2048*2n = 4.098u).
+
+`include "constants.vams"
+`include "disciplines.vams"
+
+module shifter_stim(A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_N);
+  output A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_N;
+  electrical A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_N;
+
+  parameter real    vdd    = 1.0  from (0:inf);   // logic high level (V)
+  parameter real    period = 2n   from (0:inf);   // time per vector (s)
+  parameter real    tdelay = 2n   from [0:inf);   // first vector change (s)
+  parameter real    tr     = 25p  from (0:inf);   // input rise/fall time (s)
+  parameter integer nvec   = 2048 from [1:2048];  // vectors to apply
+
+  integer k, code;
+
+  analog begin
+    @(initial_step) begin
+      k = 0;
+      code = 0;
+    end
+
+    @(timer(tdelay, period)) begin
+      if (k < nvec) code = k;
+      k = k + 1;
+    end
+
+    V(A0)   <+ transition(vdd * ((code /    1) % 2), 0, tr);
+    V(A1)   <+ transition(vdd * ((code /    2) % 2), 0, tr);
+    V(A2)   <+ transition(vdd * ((code /    4) % 2), 0, tr);
+    V(A3)   <+ transition(vdd * ((code /    8) % 2), 0, tr);
+    V(A4)   <+ transition(vdd * ((code /   16) % 2), 0, tr);
+    V(A5)   <+ transition(vdd * ((code /   32) % 2), 0, tr);
+    V(A6)   <+ transition(vdd * ((code /   64) % 2), 0, tr);
+    V(A7)   <+ transition(vdd * ((code /  128) % 2), 0, tr);
+    V(S0)   <+ transition(vdd * ((code /  256) % 2), 0, tr);
+    V(S1)   <+ transition(vdd * ((code /  512) % 2), 0, tr);
+    V(S2)   <+ transition(vdd * ((code / 1024) % 2), 0, tr);
+    V(S0_N) <+ transition(vdd * (1 - (code /  256) % 2), 0, tr);
+    V(S1_N) <+ transition(vdd * (1 - (code /  512) % 2), 0, tr);
+    V(S2_N) <+ transition(vdd * (1 - (code / 1024) % 2), 0, tr);
+  end
+endmodule
