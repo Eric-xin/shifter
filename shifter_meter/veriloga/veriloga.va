@@ -91,6 +91,11 @@ module shifter_meter(A0, A1, A2, A3, A4, A5, A6, A7, S0, S1, S2, S0_N, S1_N, S2_
          + 16*(V(Y4) > vdd/2) + 32*(V(Y5) > vdd/2) + 64*(V(Y6) > vdd/2) + 128*(V(Y7) > vdd/2);
 
     @(timer(tdelay + tsample*period, period)) begin
+      if (nchk == 0 && V(VDDD) < 0.9*vdd)
+        $strobe("shifter_meter WARNING: DUT supply V(VDDD) = %g V (expected %g V) -- connect the supply source to VDDS and VDDD to the DUT VDD pin",
+                V(VDDD), vdd);
+      if (nchk == 0 && V(VDDS) < 0.9*vdd)
+        $strobe("shifter_meter WARNING: V(VDDS) = %g V -- the supply source is not on the VDDS net", V(VDDS));
       if (nchk < nvec) begin
         p = 1;                                         // p = 2^S
         for (j = 0; j < code / 256; j = j + 1) p = p * 2;
