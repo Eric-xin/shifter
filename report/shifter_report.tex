@@ -217,6 +217,37 @@ output inverter's pull-down is the weaker side for this load. UltraSim agrees wi
 Spectre to within about 20\,\% on slew and 5\,\% on delay, as expected for a
 fast-SPICE engine.
 
+\begin{table}[H]
+\centering
+\caption{Per-output timing, UltraSim (schematic), all 2048 vectors. Times in ps.}
+\label{tab:perout}
+\begin{tabular}{lrrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{Rise slew} & \multicolumn{2}{c}{Fall slew} & \multicolumn{2}{c}{Delay $t_{pd}$} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Output & max & avg & max & avg & max & avg & Edges \\
+\midrule
+$Y_0$ & 24.39 & 22.74 & 23.68 & 22.60 & 71.81 & 65.87 & 509 \\
+$Y_1$ & 23.17 & 22.19 & 43.80 & 22.58 & 71.79 & 66.60 & 254 \\
+$Y_2$ & 22.92 & 21.54 & 43.34 & 22.28 & 71.63 & 67.97 & 126 \\
+$Y_3$ & 22.72 & 21.47 & 23.66 & 21.99 & 70.50 & 67.53 & 62 \\
+$Y_4$ & 22.93 & 21.20 & 23.04 & 21.77 & 72.12 & 68.62 & 30 \\
+$Y_5$ & 22.38 & 21.06 & 23.17 & 21.99 & 72.02 & 67.33 & 14 \\
+$Y_6$ & 21.07 & 20.79 & 22.57 & 21.99 & 71.85 & 64.47 & 6 \\
+$Y_7$ & 20.82 & 20.82 & 21.93 & 21.93 & 69.11 & 64.63 & 2 \\
+\midrule
+All & 24.39 & 22.28 & 43.80 & 22.48 & 72.12 & 66.52 & 1003 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The edge count falls by roughly half per bit from $Y_0$ (509) to $Y_7$ (2):
+under a right shift the upper outputs receive more shifted-in zeros, and
+$Y_7$ follows $A_7$ only when $S=0$. Average slews are uniform at
+21--23\,ps on every output; the worst-case fall slew of about 44\,ps occurs
+only on a few edges of $Y_1$ and $Y_2$, while their average fall slew stays
+at 22\,ps.
+
 The average power is quoted over the full \SI{10}{\micro s} window, of which
 the vector sweep occupies the first \SI{4.1}{\micro s}; the energy per output
 transition (\SI{11.2}{fJ}) and per vector (\SI{5.5}{fJ}) are the more useful
