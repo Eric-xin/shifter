@@ -10,8 +10,6 @@
 \sisetup{detect-all}
 \graphicspath{{../exp/}}
 
-% Post-layout (Calibre xRC) values: fill in from sim/shifter_metrics_pex.csv
-\newcommand{\pex}{\textemdash}
 
 \title{Shifter}
 \author{}
@@ -255,38 +253,66 @@ figures, since they do not depend on the window length.
 
 %--------------------------------------------------------------------------
 \section{Pre- versus post-layout}
-Parasitics are extracted with Calibre (R\,+\,C\,+\,coupling C) into the
-\texttt{calibre} view; the extracted cell replaces the schematic in the same
-testbench and the same measurements are repeated.
+Parasitics were extracted with Calibre (R\,+\,C\,+\,coupling C) into the
+\texttt{calibre} view, which replaces the schematic of the shifter in the same
+testbench (view list \texttt{calibre} before \texttt{schematic}). The
+extracted netlist grows from 105 to 5428 nodes and adds 5479 resistors and
+16\,047 capacitors to the 224 transistors. It was simulated in Spectre 23.1
+(APS, \texttt{errpreset=liberal}; \SI{14}{min} wall time, 80\,750 time steps),
+and the extracted shifter still passes all 2048 vectors.
 
 \begin{table}[H]
 \centering
-\caption{Schematic versus extracted layout (Spectre, all outputs).}
+\caption{Schematic versus extracted layout (Spectre, all outputs, all 2048 vectors).}
 \label{tab:prepost}
-\begin{tabular}{l S[table-format=3.2] c c}
+\begin{tabular}{l S[table-format=3.2] S[table-format=3.2] r}
 \toprule
-Metric & {Schematic} & Post-layout & Change \\
+Metric & {Schematic} & {Post-layout} & Change \\
 \midrule
-Rise slew, max (ps)            & 20.63  & \pex & \pex \\
-Fall slew, max (ps)            & 50.31  & \pex & \pex \\
-Delay $t_{pd}$, max (ps)       & 74.73  & \pex & \pex \\
-Delay $t_{pd}$, avg (ps)       & 69.97  & \pex & \pex \\
-Peak power (\si{\micro W})     & 706.37 & \pex & \pex \\
-Energy per transition (fJ)     & 11.20  & \pex & \pex \\
-Function (2048 vectors)        & {pass} & \pex & \\
+Rise slew, max (ps)                 & 20.63  & 49.55  & $+140\,\%$ \\
+Fall slew, max (ps)                 & 50.31  & 112.65 & $+124\,\%$ \\
+Delay $t_{pd}$, max (ps)            & 74.73  & 178.92 & $+139\,\%$ \\
+Delay $t_{pd}$, avg (ps)            & 69.97  & 139.85 & $+100\,\%$ \\
+\midrule
+Average power, \SI{10}{\micro s} (\si{\micro W}) & 1.124 & 1.824 & $+62\,\%$ \\
+Peak power (\si{\micro W})          & 706.37 & 798.17 & $+13\,\%$ \\
+Total energy (pJ)                   & 11.24  & 18.24  & $+62\,\%$ \\
+Energy per output transition (fJ)   & 11.20  & 18.18  & $+62\,\%$ \\
+Energy per vector (fJ)              & 5.49   & 8.91   & $+62\,\%$ \\
+\midrule
+Function (2048 vectors)             & {pass} & {pass} & \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Layout parasitics roughly double the propagation delay (average
+\SI{70.0}{ps} $\rightarrow$ \SI{139.9}{ps}, worst case \SI{74.7}{ps}
+$\rightarrow$ \SI{178.9}{ps}) and increase the worst-case output slews by a
+factor of 2.2--2.4. The energy per transition rises by 62\,\%, which is the
+extra wiring capacitance charged on every switching event, while the peak
+power rises only 13\,\%, since the added RC spreads the switching current
+over a longer time. The select lines run vertically across all eight bit
+rows and each drives eight transmission gates, so their wire capacitance is
+a likely large contributor; reducing it (wider spacing, a select buffer per
+stage, or shorter routes) is the main lever for recovering speed.
+
+The two runs used different Spectre accuracy presets (\texttt{conservative}
+pre-layout, \texttt{liberal} post-layout); the changes are far larger than
+the expected difference between presets, but a post-layout rerun with
+\texttt{conservative} would make the comparison exact.
 
 %--------------------------------------------------------------------------
 \section{Conclusion}
 The 8-bit logarithmic right shifter was implemented with transmission-gate
 multiplexers and progressively sized restoring inverters. The layout is DRC-
 and LVS-clean, and all 2048 input/shift combinations produce the correct
-output in transistor-level simulation. At \SI{1.0}{V}, TT, \SI{27}{\celsius}
-with a fanout-of-4 load, the worst-case delay is \SI{74.7}{ps}, the worst-case
-output slew is \SI{20.6}{ps} rising and \SI{50.3}{ps} falling, and the shifter
-draws about \SI{11.2}{fJ} per output transition. Post-layout figures will
-quantify the cost of the extracted wiring parasitics.
+output in transistor-level simulation both before and after parasitic
+extraction. At \SI{1.0}{V}, TT, \SI{27}{\celsius} with a fanout-of-4 load,
+the schematic achieves a worst-case delay of \SI{74.7}{ps} and
+\SI{11.2}{fJ} per output transition; with extracted parasitics the
+worst-case delay becomes \SI{178.9}{ps} (average \SI{139.9}{ps}), the
+worst-case slews \SI{49.6}{ps} rising and \SI{112.7}{ps} falling, and the
+energy \SI{18.2}{fJ} per output transition. Wiring parasitics therefore
+dominate the delay of the laid-out shifter.
 
 \end{document}
