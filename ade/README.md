@@ -1,4 +1,4 @@
-# ADE testbench with Verilog-A stimulus and checker
+# ADE testbench with Verilog-A stimulus, checker and metrics meter
 
 | Cell | View | Role |
 |---|---|---|
@@ -9,7 +9,7 @@
 
 ## One-time setup (Virtuoso)
 
-1. `git pull` in the library so `shifter_stim/` and `shifter_check/` appear.
+1. `git pull` in the library so `shifter_stim/`, `shifter_check/` and `shifter_meter/` appear.
 2. In the Library Manager, open `shifter_stim/veriloga`, `shifter_check/veriloga` and `shifter_meter/veriloga`,
    save each, and accept **create symbol** when asked. (This also makes the
    module parameters editable on the instances.)
