@@ -3,8 +3,8 @@
 	<active>Active Setup</active>
 	<history>History
 		<historyentry assemblerOrExplorer="explorer" roOrView="view" runningOrFinished="finished">ExplorerRun.0
-			<timestamp>Nov 18 22:59:43 2026</timestamp>
-			<uuid>{50c78a82-cd2a-4eda-a6dc-4924cc5be8e7}</uuid>
+			<timestamp>Nov 24 22:43:24 2026</timestamp>
+			<uuid>{fa19e680-050b-48c1-8700-b91d4e91d373}</uuid>
 			<locked>0</locked>
 			<mode>Single Run, Sweeps and Corners</mode>
 			<resultsname>/homes/user/stud/fall26/ex2147/Cadence/Shifter/Shifter_8bit_sized_tb/maestro/results/maestro/$AXL_HISTORY_NAME.rdb</resultsname>
