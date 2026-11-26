@@ -12,7 +12,7 @@
 
 
 \title{Shifter}
-\author{}
+\author{Eric Xin, Shi Tao}
 \date{November 18, 2026}
 
 \begin{document}
@@ -34,12 +34,18 @@ logical right shift, $Y_i = A_{i+S}$ with zeros shifted into the vacated
 upper bits, where $S = 4S_2 + 2S_1 + S_0$. Complementary selects
 $S_k$/$\overline{S_k}$ are provided at the cell boundary.
 
-Each multiplexer is built from two CMOS transmission gates
-(Fig.~\ref{fig:mux}); since transmission gates do not restore signal levels,
-every multiplexer stage is followed by an inverter. Together with the input
-inverter, every path passes through four inverters, so the output is not
-inverted. The inverters are sized up from input to output
-(\texttt{INV\_1}$\rightarrow$\texttt{INV\_4}) to drive the output load.
+Each multiplexer is built from two CMOS transmission gates (TGs) whose NMOS
+and PMOS have equal width and are controlled by the complementary selects
+$S_k$/$\overline{S_k}$ (Fig.~\ref{fig:mux}); the three stages use
+$3 \times 8 = 24$ multiplexers. Since TGs do not restore signal levels, an
+inverter is placed at the input, between consecutive stages and at the output.
+Each stage is then an inverter driving a TG, an effective stack of two;
+without the intermediate inverters, the path from the input inverter to the
+output would be a stack of four. Every inverter output fans out to two TGs:
+the ``0'' input of its own bit's multiplexer and the ``1'' input of the
+multiplexer $2^k$ bits below. The inverters are sized up from input to output
+(\texttt{INV\_1}$\rightarrow$\texttt{INV\_4}) to drive the output load
+(Section~\ref{sec:sizing}).
 
 \begin{table}[H]
 \centering
@@ -88,6 +94,102 @@ Output      & \texttt{INV\_4}      & 8 & output driver \\
 multiplexer\,+\,inverter rows (one per shift stage).}
 \label{fig:sch}
 \end{figure}
+
+\subsection{Signal polarity and zero fill}
+The data path contains four inverters, so $Y$ is in phase with $A$, but the
+polarity of the intermediate nodes alternates: stage~0 carries inverted
+data, stage~1 true data and stage~2 inverted data. The constant shifted into
+the vacated bits must represent logic~0 in each stage's polarity, so it is
+tied to VDD in stage~0 (1 multiplexer), to GND in stage~1 (2 multiplexers)
+and to VDD in stage~2 (4 multiplexers): five fill inputs go to VDD and two to
+GND.
+
+\subsection{Transistor sizing}
+\label{sec:sizing}
+The data path was sized with the method of logical effort under the
+following assumptions. All widths are in units of the NMOS width of the
+minimum inverter ($W_N = \SI{150}{nm}$).
+\begin{itemize}
+  \setlength\itemsep{0pt}
+  \item Minimum inverter: $N=1$, $P=2$, input capacitance 3.
+  \item A TG with $N=P=w$ has an equivalent resistance of about $R/w$ in
+        both directions (Weste \& Harris approximation).
+  \item Each output $Y$ drives 4 minimum inverters, a load of 12; the input
+        inverter on $A$ is minimum size, so the path input capacitance is 3.
+  \item $S_k$ and $\overline{S_k}$ are supplied externally, each driven by a
+        $4\times$ minimum inverter whose load is accounted for by the
+        external circuit.
+  \item Parasitic delays are estimated with the Elmore model, with $p=1$ for
+        the minimum inverter; delays are in units of $\tau$.
+\end{itemize}
+
+An inverter\,+\,TG stage needs an inverter of $N=2$, $P=4$ and a TG of
+$N=P=2$ to match the drive of a unit inverter; its input capacitance is 6,
+so $g = 6/3 = 2$. The TG width is set equal to the NMOS width of the
+inverter that drives it. For the four-stage path,
+\[
+G = 2\cdot2\cdot2\cdot1 = 8,\quad B = 1,\quad H = 12/3 = 4,\quad
+F = GBH = 32,\quad \hat f = F^{1/4} = 2^{5/4} \approx 2.38 .
+\]
+Working back from the load with $C_\text{in} = g\,C_\text{out}/\hat f$ gives
+input capacitances of 5.05 (output inverter), 4.24, 3.57 and 3.00 (input
+inverter). Only the inverter's input capacitance counts as $C_\text{in}$ of
+an inverter\,+\,TG stage: the TG gates connect to the select lines, and the
+TG diffusion capacitance is counted as parasitic delay rather than
+$C_\text{out}$. Each stage is therefore $2^{1/4} \approx 1.19$ times larger
+than the one before (Table~\ref{tab:sizing}).
+
+\begin{table}[H]
+\centering
+\caption{Theoretical data-path sizes ($N/P$ in units of $W_N=\SI{150}{nm}$),
+before rounding.}
+\label{tab:sizing}
+\begin{tabular}{llcc}
+\toprule
+Element & Cell & $N$ / $P$ & $W_N$ (nm) \\
+\midrule
+Input inverter ($A$)        & \texttt{INV\_1}     & 1 / 2         & 150 \\
+Stage 0 TG                  & \texttt{MUX2to1\_1} & 1 / 1         & 150 \\
+Inverter, stage 0$\to$1     & \texttt{INV\_2}     & 1.19 / 2.38   & 178 \\
+Stage 1 TG                  & \texttt{MUX2to1\_2} & 1.19 / 1.19   & 178 \\
+Inverter, stage 1$\to$2     & \texttt{INV\_3}     & 1.41 / 2.83   & 212 \\
+Stage 2 TG                  & \texttt{MUX2to1\_3} & 1.41 / 1.41   & 212 \\
+Output inverter             & \texttt{INV\_4}     & 1.68 / 3.36   & 252 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Select lines.} Each multiplexer loads $S_k$ and
+$\overline{S_k}$ with one NMOS and one PMOS gate of width $w$, so the eight
+multiplexers present $16w$: 16, 19.0 and 22.6 on $S_0$, $S_1$ and $S_2$.
+Driven by the $4\times$ inverter (input capacitance 12), the path effort is
+only 1.33--1.89, so the optimum number of stages is one and the selects
+connect directly to the TG gates without buffers. The estimated delays
+($L/12 + 1$) are 2.3, 2.6 and 2.9\,$\tau$, far below the data path, so the
+selects are not on the critical path.
+
+\paragraph{Delay estimate.} Each inverter\,+\,TG stage has a parasitic delay
+of about 5 and the output inverter 1, so $P = 16$ and the sized path delay
+is $D = 4 \times 2.38 + 16 \approx 25.5\,\tau$. With all devices at minimum
+size the stage efforts are 2, 2, 2 and 4, giving $D \approx 26\,\tau$, only
+about 2\,\% slower. Sizing gains little here because $H$ is only 4, so the
+minimum-size efforts are already nearly balanced, and because parasitic
+delay, which does not depend on size, is over 60\,\% of the total. With a
+load of 64 minimum inverters the effort delay would be about 70 at minimum
+size versus about 19 when sized, and sizing would matter.
+
+\subsection{Layout implementation}
+The multiplexer and inverter cells use a fixed cell height. A transistor too
+wide to fit in that height as a single finger is split into several parallel
+fingers, which keeps the cells compact and the total area small. Multiplying
+the relative sizes by \SI{150}{nm} gives widths with many decimals, while the
+process requires widths on a \SI{5}{nm} grid (otherwise LVS fails), so each
+finger width is rounded to the nearest multiple of \SI{5}{nm}.
+
+\paragraph{Possible optimization.} The TGs on the fill inputs could be
+replaced by single transistors that pass their constant in the strong
+direction (PMOS for VDD, NMOS for GND), reducing the select-line load and the
+diffusion capacitance on those nodes.
 
 %--------------------------------------------------------------------------
 \section{Verification}
@@ -258,8 +360,8 @@ Parasitics were extracted with Calibre (R\,+\,C\,+\,coupling C) into the
 testbench (view list \texttt{calibre} before \texttt{schematic}). The
 extracted netlist grows from 105 to 5428 nodes and adds 5479 resistors and
 16\,047 capacitors to the 224 transistors. It was simulated in Spectre 23.1
-(APS, \texttt{errpreset=liberal}; \SI{14}{min} wall time, 80\,750 time steps),
-and the extracted shifter still passes all 2048 vectors.
+(APS, \texttt{errpreset=moderate}; \SI{26.6}{min} wall time, 166\,035 time
+steps), and the extracted shifter still passes all 2048 vectors.
 
 \begin{table}[H]
 \centering
@@ -269,16 +371,16 @@ and the extracted shifter still passes all 2048 vectors.
 \toprule
 Metric & {Schematic} & {Post-layout} & Change \\
 \midrule
-Rise slew, max (ps)                 & 20.63  & 49.55  & $+140\,\%$ \\
-Fall slew, max (ps)                 & 50.31  & 112.65 & $+124\,\%$ \\
-Delay $t_{pd}$, max (ps)            & 74.73  & 178.92 & $+139\,\%$ \\
-Delay $t_{pd}$, avg (ps)            & 69.97  & 139.85 & $+100\,\%$ \\
+Rise slew, max (ps)                 & 20.63  & 47.02  & $+128\,\%$ \\
+Fall slew, max (ps)                 & 50.31  & 119.88 & $+138\,\%$ \\
+Delay $t_{pd}$, max (ps)            & 74.73  & 180.94 & $+142\,\%$ \\
+Delay $t_{pd}$, avg (ps)            & 69.97  & 142.22 & $+103\,\%$ \\
 \midrule
-Average power, \SI{10}{\micro s} (\si{\micro W}) & 1.124 & 1.824 & $+62\,\%$ \\
-Peak power (\si{\micro W})          & 706.37 & 798.17 & $+13\,\%$ \\
-Total energy (pJ)                   & 11.24  & 18.24  & $+62\,\%$ \\
-Energy per output transition (fJ)   & 11.20  & 18.18  & $+62\,\%$ \\
-Energy per vector (fJ)              & 5.49   & 8.91   & $+62\,\%$ \\
+Average power, \SI{10}{\micro s} (\si{\micro W}) & 1.124 & 1.896 & $+69\,\%$ \\
+Peak power (\si{\micro W})          & 706.37 & 811.19 & $+15\,\%$ \\
+Total energy (pJ)                   & 11.24  & 18.96  & $+69\,\%$ \\
+Energy per output transition (fJ)   & 11.20  & 18.90  & $+69\,\%$ \\
+Energy per vector (fJ)              & 5.49   & 9.26   & $+69\,\%$ \\
 \midrule
 Function (2048 vectors)             & {pass} & {pass} & \\
 \bottomrule
@@ -286,20 +388,60 @@ Function (2048 vectors)             & {pass} & {pass} & \\
 \end{table}
 
 Layout parasitics roughly double the propagation delay (average
-\SI{70.0}{ps} $\rightarrow$ \SI{139.9}{ps}, worst case \SI{74.7}{ps}
-$\rightarrow$ \SI{178.9}{ps}) and increase the worst-case output slews by a
-factor of 2.2--2.4. The energy per transition rises by 62\,\%, which is the
+\SI{70.0}{ps} $\rightarrow$ \SI{142.2}{ps}, worst case \SI{74.7}{ps}
+$\rightarrow$ \SI{180.9}{ps}) and increase the worst-case output slews by a
+factor of 2.3--2.4. The energy per transition rises by 69\,\%, which is the
 extra wiring capacitance charged on every switching event, while the peak
-power rises only 13\,\%, since the added RC spreads the switching current
+power rises only 15\,\%, since the added RC spreads the switching current
 over a longer time. The select lines run vertically across all eight bit
 rows and each drives eight transmission gates, so their wire capacitance is
 a likely large contributor; reducing it (wider spacing, a select buffer per
 stage, or shorter routes) is the main lever for recovering speed.
 
-The two runs used different Spectre accuracy presets (\texttt{conservative}
-pre-layout, \texttt{liberal} post-layout); the changes are far larger than
-the expected difference between presets, but a post-layout rerun with
-\texttt{conservative} would make the comparison exact.
+\begin{table}[H]
+\centering
+\caption{Per-output timing, Spectre (post-layout), all 2048 vectors. Times in ps.}
+\label{tab:perout_pex}
+\begin{tabular}{lrrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{Rise slew} & \multicolumn{2}{c}{Fall slew} & \multicolumn{2}{c}{Delay $t_{pd}$} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Output & max & avg & max & avg & max & avg & Edges \\
+\midrule
+$Y_0$ & 46.65 & 44.01 & 47.38 & 36.73 & 180.55 & 138.09 & 509 \\
+$Y_1$ & 47.02 & 43.75 & 119.88 & 37.24 & 176.18 & 141.80 & 254 \\
+$Y_2$ & 46.50 & 44.01 & 115.48 & 37.70 & 172.37 & 148.76 & 126 \\
+$Y_3$ & 46.10 & 43.85 & 40.47 & 36.38 & 167.26 & 148.22 & 62 \\
+$Y_4$ & 46.68 & 46.53 & 46.04 & 42.72 & 180.94 & 164.47 & 30 \\
+$Y_5$ & 47.02 & 46.92 & 44.30 & 41.83 & 175.78 & 161.65 & 14 \\
+$Y_6$ & 46.43 & 46.34 & 40.33 & 39.99 & 171.84 & 151.10 & 6 \\
+$Y_7$ & 45.97 & 45.97 & 40.90 & 40.90 & 165.95 & 149.43 & 2 \\
+\midrule
+All & 47.02 & 44.07 & 119.88 & 37.24 & 180.94 & 142.22 & 1003 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Per output (Table~\ref{tab:perout_pex}), the average rise and fall slews stay
+uniform at 36--47\,ps, and as in the schematic the worst-case fall slew
+(about 115--120\,ps) occurs only on a few edges of $Y_1$ and $Y_2$. The
+upper outputs $Y_4$--$Y_7$ have a higher average delay (149--164\,ps) than
+$Y_0$--$Y_3$ (138--149\,ps), but they switch on far fewer edges.
+Figure~\ref{fig:wave_pex} shows the extracted shifter's waveforms around one
+vector boundary.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{shifter_wave_pex.png}
+\caption{Post-layout transient waveforms of all inputs and outputs around the
+vector boundary at $t = \SI{3.074}{\micro s}$ (Spectre, extracted view).}
+\label{fig:wave_pex}
+\end{figure}
+
+The schematic run used \texttt{errpreset=conservative} and the post-layout run
+\texttt{moderate}. An earlier post-layout run with \texttt{liberal} gave
+results within 6\,\% of the \texttt{moderate} run, so the preset accounts for
+only a small part of the differences in Table~\ref{tab:prepost}.
 
 %--------------------------------------------------------------------------
 \section{Conclusion}
@@ -310,9 +452,9 @@ output in transistor-level simulation both before and after parasitic
 extraction. At \SI{1.0}{V}, TT, \SI{27}{\celsius} with a fanout-of-4 load,
 the schematic achieves a worst-case delay of \SI{74.7}{ps} and
 \SI{11.2}{fJ} per output transition; with extracted parasitics the
-worst-case delay becomes \SI{178.9}{ps} (average \SI{139.9}{ps}), the
-worst-case slews \SI{49.6}{ps} rising and \SI{112.7}{ps} falling, and the
-energy \SI{18.2}{fJ} per output transition. Wiring parasitics therefore
+worst-case delay becomes \SI{180.9}{ps} (average \SI{142.2}{ps}), the
+worst-case slews \SI{47.0}{ps} rising and \SI{119.9}{ps} falling, and the
+energy \SI{18.9}{fJ} per output transition. Wiring parasitics therefore
 dominate the delay of the laid-out shifter.
 
 \end{document}
